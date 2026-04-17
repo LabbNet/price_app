@@ -33,7 +33,8 @@ export default function Home() {
         <ul>
           {isStaff(user) && <li><Link to="/products">Manage products</Link></li>}
           {isStaff(user) && <li><Link to="/buckets">Pricing buckets</Link></li>}
-          <li className="muted">Clients &amp; clinics — coming next</li>
+          {isStaff(user) && <li><Link to="/clients">Clients</Link></li>}
+          {isStaff(user) && <li><Link to="/clinics">Clinics</Link></li>}
           <li className="muted">Contract templates &amp; e-sign — coming next</li>
         </ul>
       </div>

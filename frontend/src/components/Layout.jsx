@@ -13,6 +13,8 @@ export default function Layout() {
             <NavLink to="/" end>Home</NavLink>
             {isStaff(user) && <NavLink to="/products">Products</NavLink>}
             {isStaff(user) && <NavLink to="/buckets">Buckets</NavLink>}
+            {isStaff(user) && <NavLink to="/clients">Clients</NavLink>}
+            {isStaff(user) && <NavLink to="/clinics">Clinics</NavLink>}
           </div>
           <div className="nav-right">
             <span className="muted">{user?.email} · {user?.role}</span>

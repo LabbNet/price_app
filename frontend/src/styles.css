@@ -130,6 +130,18 @@ h2 { margin: 1rem 0 0.5rem; font-size: 1.1rem; }
 }
 .error { color: var(--danger); font-size: 0.9rem; margin: 0.5rem 0; }
 
+/* standalone search/filter inputs (outside .field) */
+.search, select:not(.field select) {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+.search:focus, select:focus { outline: none; border-color: var(--accent); }
+
 /* table */
 .tbl { width: 100%; border-collapse: collapse; }
 .tbl th, .tbl td {

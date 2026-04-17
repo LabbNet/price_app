@@ -7,6 +7,10 @@ import Login from './pages/Login';
 import Products from './pages/Products';
 import Buckets from './pages/Buckets';
 import BucketDetail from './pages/BucketDetail';
+import Clients from './pages/Clients';
+import ClientDetail from './pages/ClientDetail';
+import Clinics from './pages/Clinics';
+import ClinicDetail from './pages/ClinicDetail';
 
 const STAFF = ['admin', 'sales', 'legal', 'finance'];
 
@@ -44,6 +48,38 @@ export default function App() {
             element={
               <ProtectedRoute allow={STAFF}>
                 <BucketDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/clients"
+            element={
+              <ProtectedRoute allow={STAFF}>
+                <Clients />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/clients/:id"
+            element={
+              <ProtectedRoute allow={STAFF}>
+                <ClientDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/clinics"
+            element={
+              <ProtectedRoute allow={STAFF}>
+                <Clinics />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/clinics/:id"
+            element={
+              <ProtectedRoute allow={STAFF}>
+                <ClinicDetail />
               </ProtectedRoute>
             }
           />
