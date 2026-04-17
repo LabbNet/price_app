@@ -1,13 +1,12 @@
 import { Routes, Route, Link, Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { apiGet } from './api';
 
 function Home() {
+  const apiBase = import.meta.env.VITE_API_URL || '(same origin)';
   const health = useQuery({
     queryKey: ['health'],
-    queryFn: async () => {
-      const r = await fetch('/api/health');
-      return r.json();
-    },
+    queryFn: () => apiGet('/api/health'),
   });
 
   return (
@@ -17,8 +16,9 @@ function Home() {
 
       <div className="card">
         <h2>Backend health</h2>
+        <p className="muted">API: <code>{apiBase}</code></p>
         {health.isLoading && <p className="muted">Checking…</p>}
-        {health.isError && <p><span className="badge err">down</span> {String(health.error)}</p>}
+        {health.isError && <p><span className="badge err">down</span> {String(health.error.message || health.error)}</p>}
         {health.data && (
           <p>
             <span className={`badge ${health.data.status === 'ok' ? 'ok' : 'err'}`}>
