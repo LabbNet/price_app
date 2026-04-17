@@ -42,4 +42,4 @@ services:
 databases:
   - name: price-app-db
     databaseName: price_app
-    plan: basic_256mb
+    plan: basic-256mb
