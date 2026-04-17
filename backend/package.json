@@ -11,7 +11,8 @@
     "migrate:rollback": "knex migrate:rollback",
     "migrate:make": "knex migrate:make",
     "seed": "knex seed:run",
-    "seed:make": "knex seed:make"
+    "seed:make": "knex seed:make",
+    "create:admin": "node scripts/create-admin.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
