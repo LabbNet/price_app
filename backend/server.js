@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const health = require('./routes/health');
 const auth = require('./routes/auth');
 const products = require('./routes/products');
+const buckets = require('./routes/buckets');
 
 const app = express();
 
@@ -21,9 +22,9 @@ app.use('/api', apiLimiter);
 app.use('/api/health', health);
 app.use('/api/auth', auth);
 app.use('/api/products', products);
+app.use('/api/buckets', buckets);
 
 // Feature route stubs — filled in subsequent commits.
-app.use('/api/buckets', (req, res) => res.status(501).json({ error: 'not_implemented' }));
 app.use('/api/clients', (req, res) => res.status(501).json({ error: 'not_implemented' }));
 app.use('/api/clinics', (req, res) => res.status(501).json({ error: 'not_implemented' }));
 app.use('/api/contracts', (req, res) => res.status(501).json({ error: 'not_implemented' }));

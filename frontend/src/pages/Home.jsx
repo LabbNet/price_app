@@ -32,7 +32,7 @@ export default function Home() {
         <h2>Quick actions</h2>
         <ul>
           {isStaff(user) && <li><Link to="/products">Manage products</Link></li>}
-          <li className="muted">Pricing buckets — coming next</li>
+          {isStaff(user) && <li><Link to="/buckets">Pricing buckets</Link></li>}
           <li className="muted">Clients &amp; clinics — coming next</li>
           <li className="muted">Contract templates &amp; e-sign — coming next</li>
         </ul>

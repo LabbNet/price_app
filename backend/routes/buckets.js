@@ -1,0 +1,239 @@
+const express = require('express');
+const { z } = require('zod');
+const db = require('../db/knex');
+const { requireAuth, requireStaff } = require('../middleware/auth');
+const { audit } = require('../services/audit');
+
+const router = express.Router();
+
+router.use(requireAuth);
+
+const bucketSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  is_active: z.boolean().optional(),
+});
+
+const bucketUpdateSchema = bucketSchema.partial();
+
+const itemSchema = z.object({
+  product_id: z.string().uuid(),
+  unit_price: z.coerce.number().min(0),
+  total_price: z.coerce.number().min(0).nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+const itemUpdateSchema = z.object({
+  unit_price: z.coerce.number().min(0).optional(),
+  total_price: z.coerce.number().min(0).nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+// List buckets (with item counts, optional inactive)
+router.get('/', async (req, res) => {
+  const includeInactive = req.query.include_inactive === 'true';
+
+  const rows = await db('pricing_buckets as b')
+    .leftJoin('bucket_items as bi', 'bi.bucket_id', 'b.id')
+    .select(
+      'b.id',
+      'b.name',
+      'b.description',
+      'b.notes',
+      'b.copied_from_bucket_id',
+      'b.is_active',
+      'b.created_at',
+      'b.updated_at',
+      db.raw('COUNT(bi.id)::int as item_count'),
+    )
+    .modify((q) => { if (!includeInactive) q.where('b.is_active', true); })
+    .groupBy('b.id')
+    .orderBy('b.name');
+
+  res.json({ buckets: rows });
+});
+
+// Bucket detail with items + joined product data (for margin display)
+router.get('/:id', async (req, res) => {
+  const bucket = await db('pricing_buckets').where({ id: req.params.id }).first();
+  if (!bucket) return res.status(404).json({ error: 'not_found' });
+
+  const items = await db('bucket_items as bi')
+    .join('products as p', 'p.id', 'bi.product_id')
+    .where('bi.bucket_id', req.params.id)
+    .select(
+      'bi.id',
+      'bi.product_id',
+      'bi.unit_price',
+      'bi.total_price',
+      'bi.notes',
+      'bi.created_at',
+      'p.name as product_name',
+      'p.product_type',
+      'p.unit_of_measure',
+      'p.labb_cost',
+      'p.is_active as product_is_active',
+    )
+    .orderBy('p.name');
+
+  res.json({ bucket, items });
+});
+
+router.post('/', requireStaff, async (req, res) => {
+  const parsed = bucketSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
+
+  const [row] = await db('pricing_buckets')
+    .insert({ ...parsed.data, created_by: req.user.id })
+    .returning('*');
+
+  await audit({ req, action: 'bucket.create', entityType: 'pricing_bucket', entityId: row.id, after: row });
+  res.status(201).json({ bucket: row });
+});
+
+router.patch('/:id', requireStaff, async (req, res) => {
+  const parsed = bucketUpdateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
+
+  const before = await db('pricing_buckets').where({ id: req.params.id }).first();
+  if (!before) return res.status(404).json({ error: 'not_found' });
+
+  const [row] = await db('pricing_buckets')
+    .where({ id: req.params.id })
+    .update({ ...parsed.data, updated_at: db.fn.now() })
+    .returning('*');
+
+  await audit({ req, action: 'bucket.update', entityType: 'pricing_bucket', entityId: row.id, before, after: row });
+  res.json({ bucket: row });
+});
+
+router.post('/:id/deactivate', requireStaff, async (req, res) => {
+  const before = await db('pricing_buckets').where({ id: req.params.id }).first();
+  if (!before) return res.status(404).json({ error: 'not_found' });
+
+  const [row] = await db('pricing_buckets')
+    .where({ id: req.params.id })
+    .update({ is_active: false, updated_at: db.fn.now() })
+    .returning('*');
+
+  await audit({ req, action: 'bucket.deactivate', entityType: 'pricing_bucket', entityId: row.id, before, after: row });
+  res.json({ bucket: row });
+});
+
+router.post('/:id/activate', requireStaff, async (req, res) => {
+  const before = await db('pricing_buckets').where({ id: req.params.id }).first();
+  if (!before) return res.status(404).json({ error: 'not_found' });
+
+  const [row] = await db('pricing_buckets')
+    .where({ id: req.params.id })
+    .update({ is_active: true, updated_at: db.fn.now() })
+    .returning('*');
+
+  await audit({ req, action: 'bucket.activate', entityType: 'pricing_bucket', entityId: row.id, before, after: row });
+  res.json({ bucket: row });
+});
+
+// Duplicate bucket + all items under a new name
+router.post('/:id/copy', requireStaff, async (req, res) => {
+  const copySchema = z.object({ name: z.string().min(1).max(200), description: z.string().nullable().optional() });
+  const parsed = copySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
+
+  const source = await db('pricing_buckets').where({ id: req.params.id }).first();
+  if (!source) return res.status(404).json({ error: 'not_found' });
+
+  const result = await db.transaction(async (trx) => {
+    const [copy] = await trx('pricing_buckets')
+      .insert({
+        name: parsed.data.name,
+        description: parsed.data.description ?? source.description,
+        notes: source.notes,
+        copied_from_bucket_id: source.id,
+        created_by: req.user.id,
+      })
+      .returning('*');
+
+    const sourceItems = await trx('bucket_items').where({ bucket_id: source.id });
+    if (sourceItems.length > 0) {
+      await trx('bucket_items').insert(
+        sourceItems.map((i) => ({
+          bucket_id: copy.id,
+          product_id: i.product_id,
+          unit_price: i.unit_price,
+          total_price: i.total_price,
+          notes: i.notes,
+        })),
+      );
+    }
+    return { copy, itemsCopied: sourceItems.length };
+  });
+
+  await audit({
+    req,
+    action: 'bucket.copy',
+    entityType: 'pricing_bucket',
+    entityId: result.copy.id,
+    after: result.copy,
+    notes: `copied from ${source.id} (${result.itemsCopied} items)`,
+  });
+  res.status(201).json({ bucket: result.copy, items_copied: result.itemsCopied });
+});
+
+// Items
+router.post('/:id/items', requireStaff, async (req, res) => {
+  const parsed = itemSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
+
+  const bucket = await db('pricing_buckets').where({ id: req.params.id }).first();
+  if (!bucket) return res.status(404).json({ error: 'bucket_not_found' });
+
+  const product = await db('products').where({ id: parsed.data.product_id }).first();
+  if (!product) return res.status(400).json({ error: 'product_not_found' });
+
+  const dupe = await db('bucket_items')
+    .where({ bucket_id: req.params.id, product_id: parsed.data.product_id })
+    .first();
+  if (dupe) return res.status(409).json({ error: 'item_already_in_bucket' });
+
+  const [row] = await db('bucket_items')
+    .insert({ bucket_id: req.params.id, ...parsed.data })
+    .returning('*');
+
+  await audit({
+    req,
+    action: 'bucket_item.create',
+    entityType: 'bucket_item',
+    entityId: row.id,
+    after: row,
+    notes: `bucket=${req.params.id} product=${parsed.data.product_id}`,
+  });
+  res.status(201).json({ item: row });
+});
+
+router.patch('/:id/items/:itemId', requireStaff, async (req, res) => {
+  const parsed = itemUpdateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
+
+  const before = await db('bucket_items').where({ id: req.params.itemId, bucket_id: req.params.id }).first();
+  if (!before) return res.status(404).json({ error: 'not_found' });
+
+  const [row] = await db('bucket_items')
+    .where({ id: req.params.itemId })
+    .update({ ...parsed.data, updated_at: db.fn.now() })
+    .returning('*');
+
+  await audit({ req, action: 'bucket_item.update', entityType: 'bucket_item', entityId: row.id, before, after: row });
+  res.json({ item: row });
+});
+
+router.delete('/:id/items/:itemId', requireStaff, async (req, res) => {
+  const before = await db('bucket_items').where({ id: req.params.itemId, bucket_id: req.params.id }).first();
+  if (!before) return res.status(404).json({ error: 'not_found' });
+
+  await db('bucket_items').where({ id: req.params.itemId }).del();
+  await audit({ req, action: 'bucket_item.delete', entityType: 'bucket_item', entityId: before.id, before });
+  res.json({ ok: true });
+});
+
+module.exports = router;
