@@ -1,0 +1,42 @@
+import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { apiGet } from '../api';
+import { useAuth, isStaff } from '../auth';
+
+export default function Home() {
+  const { user } = useAuth();
+  const apiBase = import.meta.env.VITE_API_URL || '(same origin)';
+  const health = useQuery({ queryKey: ['health'], queryFn: () => apiGet('/api/health') });
+
+  return (
+    <div className="shell">
+      <h1>Labb Pricing App</h1>
+      <p className="muted">Signed in as <strong>{user?.email}</strong> ({user?.role})</p>
+
+      <div className="card">
+        <h2>Backend health</h2>
+        <p className="muted">API: <code>{apiBase}</code></p>
+        {health.isLoading && <p className="muted">Checking…</p>}
+        {health.isError && <p><span className="badge err">down</span> {String(health.error.message || health.error)}</p>}
+        {health.data && (
+          <p>
+            <span className={`badge ${health.data.status === 'ok' ? 'ok' : 'err'}`}>
+              {health.data.status}
+            </span>{' '}
+            db: <code>{health.data.db}</code> · <span className="muted">{health.data.time}</span>
+          </p>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Quick actions</h2>
+        <ul>
+          {isStaff(user) && <li><Link to="/products">Manage products</Link></li>}
+          <li className="muted">Pricing buckets — coming next</li>
+          <li className="muted">Clients &amp; clinics — coming next</li>
+          <li className="muted">Contract templates &amp; e-sign — coming next</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
