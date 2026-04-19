@@ -35,6 +35,7 @@ export default function Home() {
           {isStaff(user) && <li><Link to="/buckets">Pricing buckets</Link></li>}
           {isStaff(user) && <li><Link to="/clients">Clients</Link></li>}
           {isStaff(user) && <li><Link to="/clinics">Clinics</Link></li>}
+          {isStaff(user) && <li><Link to="/special-pricing">Special pricing</Link></li>}
           <li className="muted">Contract templates &amp; e-sign — coming next</li>
         </ul>
       </div>

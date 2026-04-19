@@ -11,6 +11,7 @@ import Clients from './pages/Clients';
 import ClientDetail from './pages/ClientDetail';
 import Clinics from './pages/Clinics';
 import ClinicDetail from './pages/ClinicDetail';
+import SpecialPricing from './pages/SpecialPricing';
 
 const STAFF = ['admin', 'sales', 'legal', 'finance'];
 
@@ -80,6 +81,14 @@ export default function App() {
             element={
               <ProtectedRoute allow={STAFF}>
                 <ClinicDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/special-pricing"
+            element={
+              <ProtectedRoute allow={STAFF}>
+                <SpecialPricing />
               </ProtectedRoute>
             }
           />

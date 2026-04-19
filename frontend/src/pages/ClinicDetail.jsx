@@ -3,19 +3,38 @@ import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '../api';
 import { ClinicForm } from './Clinics';
+import SpecialPricingForm from '../components/SpecialPricingForm';
+
+const CONDITION_LABEL = {
+  time_limited: 'Time-limited',
+  single_order: 'Single-order',
+  client_specific: 'Client-specific',
+};
 
 export default function ClinicDetail() {
   const { id } = useParams();
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [assigning, setAssigning] = useState(false);
+  const [addingSpecial, setAddingSpecial] = useState(false);
+  const [editingSpecial, setEditingSpecial] = useState(null);
 
   const detail = useQuery({ queryKey: ['clinic', id], queryFn: () => apiGet(`/api/clinics/${id}`) });
   const buckets = useQuery({ queryKey: ['buckets', false], queryFn: () => apiGet('/api/buckets') });
+  const specials = useQuery({
+    queryKey: ['special-pricing', { clinic: id }],
+    queryFn: () => apiGet(`/api/special-pricing?clinic_id=${id}`),
+  });
+  const effective = useQuery({
+    queryKey: ['effective', id],
+    queryFn: () => apiGet(`/api/special-pricing/resolve-clinic/${id}`),
+  });
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['clinic', id] });
     qc.invalidateQueries({ queryKey: ['clinics'] });
+    qc.invalidateQueries({ queryKey: ['special-pricing'] });
+    qc.invalidateQueries({ queryKey: ['effective', id] });
   };
 
   const save = useMutation({
@@ -35,6 +54,21 @@ export default function ClinicDetail() {
 
   const toggle = useMutation({
     mutationFn: () => apiPost(`/api/clinics/${id}/${detail.data.clinic.is_active ? 'deactivate' : 'activate'}`),
+    onSuccess: () => invalidate(),
+  });
+
+  const createSpecial = useMutation({
+    mutationFn: (data) => apiPost('/api/special-pricing', data),
+    onSuccess: () => { invalidate(); setAddingSpecial(false); },
+  });
+
+  const updateSpecial = useMutation({
+    mutationFn: ({ spId, data }) => apiPatch(`/api/special-pricing/${spId}`, data),
+    onSuccess: () => { invalidate(); setEditingSpecial(null); },
+  });
+
+  const toggleSpecial = useMutation({
+    mutationFn: ({ spId, active }) => apiPost(`/api/special-pricing/${spId}/${active ? 'deactivate' : 'activate'}`),
     onSuccess: () => invalidate(),
   });
 
@@ -101,9 +135,112 @@ export default function ClinicDetail() {
         )}
       </div>
 
+      <div className="row-between" style={{ marginTop: '1.5rem' }}>
+        <h2>Special pricing</h2>
+        <button className="btn primary" onClick={() => setAddingSpecial(true)}>+ Add special pricing</button>
+      </div>
+      <p className="muted">Overrides the bucket price for the conditions you set. Precedence: single-order &gt; time-limited &gt; client-specific.</p>
+
+      <div className="card no-pad">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Condition</th>
+              <th className="num">Unit price</th>
+              <th className="num">Margin</th>
+              <th>Window / uses</th>
+              <th>Reason</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {specials.isLoading && <tr><td colSpan={7} className="muted center">Loading…</td></tr>}
+            {specials.data && specials.data.special_pricing.length === 0 && (
+              <tr><td colSpan={7} className="muted center">No special pricing. This clinic uses its bucket price for everything.</td></tr>
+            )}
+            {specials.data && specials.data.special_pricing.map((sp) => {
+              const unit = Number(sp.unit_price);
+              const cost = Number(sp.labb_cost);
+              const marginPct = unit > 0 ? ((unit - cost) / unit) * 100 : 0;
+              return (
+                <tr key={sp.id} className={sp.is_active ? '' : 'dim'}>
+                  <td>{sp.product_name}{sp.unit_of_measure && <div className="muted small">{sp.unit_of_measure}</div>}</td>
+                  <td><span className="badge">{CONDITION_LABEL[sp.condition_type]}</span></td>
+                  <td className="num">${unit.toFixed(4)}</td>
+                  <td className="num"><span className={`badge ${marginPct < 0 ? 'err' : 'ok'}`}>{marginPct.toFixed(1)}%</span></td>
+                  <td className="small">
+                    {sp.condition_type === 'time_limited' && (
+                      <span>
+                        {sp.effective_from ? new Date(sp.effective_from).toLocaleDateString() : '—'}
+                        {' → '}
+                        {sp.effective_until ? new Date(sp.effective_until).toLocaleDateString() : '—'}
+                      </span>
+                    )}
+                    {sp.condition_type === 'single_order' && <span>{sp.uses_count} / {sp.max_uses ?? 1}</span>}
+                    {sp.condition_type === 'client_specific' && <span className="muted">always</span>}
+                  </td>
+                  <td className="small">{sp.reason}</td>
+                  <td className="right">
+                    <button className="btn ghost" onClick={() => setEditingSpecial(sp)}>Edit</button>
+                    <button className="btn ghost" onClick={() => toggleSpecial.mutate({ spId: sp.id, active: sp.is_active })}>
+                      {sp.is_active ? 'Deactivate' : 'Activate'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <h2 style={{ marginTop: '1.5rem' }}>Effective pricing</h2>
+      <p className="muted">What this clinic is actually priced at today. Source shows whether the price comes from special pricing or the assigned bucket.</p>
+      <div className="card no-pad">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Source</th>
+              <th className="num">Unit price</th>
+              <th className="num">Labb cost</th>
+              <th className="num">Margin</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {effective.isLoading && <tr><td colSpan={6} className="muted center">Resolving…</td></tr>}
+            {effective.data && effective.data.effective.length === 0 && (
+              <tr><td colSpan={6} className="muted center">No effective pricing. Assign a bucket or add special pricing.</td></tr>
+            )}
+            {effective.data && effective.data.effective.map((r) => {
+              const margin = r.unit_price - r.labb_cost;
+              const marginPct = r.unit_price > 0 ? (margin / r.unit_price) * 100 : 0;
+              return (
+                <tr key={r.product_id}>
+                  <td>{r.product_name}{r.unit_of_measure && <div className="muted small">{r.unit_of_measure}</div>}</td>
+                  <td>
+                    <span className={`badge ${r.source === 'special' ? '' : 'ok'}`}>
+                      {r.source === 'special' ? `Special (${CONDITION_LABEL[r.condition_type]})` : 'Bucket'}
+                    </span>
+                  </td>
+                  <td className="num">${Number(r.unit_price).toFixed(4)}</td>
+                  <td className="num muted">${Number(r.labb_cost).toFixed(4)}</td>
+                  <td className="num">
+                    <span className={`badge ${margin < 0 ? 'err' : 'ok'}`}>{marginPct.toFixed(1)}%</span>
+                    <div className="muted small">${margin.toFixed(4)}</div>
+                  </td>
+                  <td className="small">{r.source === 'special' ? r.reason : (r.notes || <span className="muted">—</span>)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
       {assignment_history.length > 0 && (
         <>
-          <h2>Assignment history</h2>
+          <h2 style={{ marginTop: '1.5rem' }}>Bucket assignment history</h2>
           <div className="card no-pad">
             <table className="tbl">
               <thead>
@@ -147,6 +284,27 @@ export default function ClinicDetail() {
           onSubmit={(data) => assign.mutate(data)}
           busy={assign.isPending}
           error={assign.error}
+        />
+      )}
+      {addingSpecial && (
+        <SpecialPricingForm
+          mode="create"
+          clinic={{ id: clinic.id, name: clinic.name }}
+          onCancel={() => setAddingSpecial(false)}
+          onSubmit={(data) => createSpecial.mutate(data)}
+          busy={createSpecial.isPending}
+          error={createSpecial.error}
+        />
+      )}
+      {editingSpecial && (
+        <SpecialPricingForm
+          mode="edit"
+          initial={editingSpecial}
+          clinic={{ id: clinic.id, name: clinic.name }}
+          onCancel={() => setEditingSpecial(null)}
+          onSubmit={(data) => updateSpecial.mutate({ spId: editingSpecial.id, data })}
+          busy={updateSpecial.isPending}
+          error={updateSpecial.error}
         />
       )}
     </div>
