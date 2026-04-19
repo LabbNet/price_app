@@ -8,6 +8,8 @@ const { audit } = require('../services/audit');
 const { buildContext, buildPricingSnapshot, renderTemplate } = require('../services/merge');
 const { renderContractPdf, pdfPathFor } = require('../services/pdf');
 const { upload, withSubdir } = require('../middleware/upload');
+const { sendEmail } = require('../services/email');
+const { contractSignEmail, contractActivatedEmail } = require('../services/emailTemplates');
 
 const router = express.Router();
 
@@ -258,7 +260,37 @@ router.post('/:id/send', requireStaff, async (req, res) => {
     .returning('*');
 
   await audit({ req, action: 'contract.send', entityType: 'contract', entityId: row.id, before, after: row });
-  res.json({ contract: row, signing_token: token, signing_token_expires_at: expires });
+
+  // Send the signing link to the best available email on file:
+  //   1) the client's contact_email, 2) if empty, any active clinic_admin /
+  //   client_user email associated with the client/clinic.
+  const client = await db('clients').where({ id: row.client_id }).first();
+  const clinic = client ? await db('clinics').where({ id: client.clinic_id }).first() : null;
+
+  let toAddress = client?.contact_email || null;
+  if (!toAddress && client) {
+    const fallbackUser = await db('users')
+      .where({ is_active: true })
+      .andWhere((q) => q.where({ client_id: client.id }).orWhere({ clinic_id: client.clinic_id }))
+      .orderByRaw(`
+        CASE role WHEN 'client_user' THEN 1 WHEN 'clinic_admin' THEN 2 WHEN 'clinic_user' THEN 3 ELSE 4 END
+      `)
+      .first();
+    toAddress = fallbackUser?.email || null;
+  }
+
+  let emailResult = { sent: false, reason: 'no_recipient' };
+  if (toAddress) {
+    const msg = contractSignEmail({ contract: row, client, clinic, token });
+    emailResult = await sendEmail({ to: toAddress, subject: msg.subject, text: msg.text, html: msg.html });
+  }
+
+  res.json({
+    contract: row,
+    signing_token: token,
+    signing_token_expires_at: expires,
+    email: { ...emailResult, to: toAddress },
+  });
 });
 
 // Counter-sign (Labb). Must be after clinic has signed. Locks to 'active' and
@@ -322,7 +354,24 @@ router.post('/:id/counter-sign', requireStaff, async (req, res) => {
     .returning('*');
 
   await audit({ req, action: 'contract.counter_sign', entityType: 'contract', entityId: row.id, before, after: row });
-  res.json({ contract: row });
+
+  // Notify the signer that their contract is now active, attaching the PDF.
+  const toAddress = clientSig?.signer_email || client?.contact_email || null;
+  let emailResult = { sent: false, reason: 'no_recipient' };
+  if (toAddress) {
+    const msg = contractActivatedEmail({ contract: row, client });
+    emailResult = await sendEmail({
+      to: toAddress,
+      subject: msg.subject,
+      text: msg.text,
+      html: msg.html,
+      attachments: pdfPath && require('fs').existsSync(pdfPath)
+        ? [{ filename: `contract-${row.id}.pdf`, path: pdfPath, contentType: 'application/pdf' }]
+        : undefined,
+    });
+  }
+
+  res.json({ contract: row, email: { ...emailResult, to: toAddress } });
 });
 
 const terminateSchema = z.object({ reason: z.string().min(1) });

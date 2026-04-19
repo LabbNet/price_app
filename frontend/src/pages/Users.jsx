@@ -27,7 +27,7 @@ export default function Users() {
     mutationFn: (data) => apiPost('/api/users/invite', data),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ['invites'] });
-      setInviteResult(r.invite);
+      setInviteResult({ ...r.invite, email: r.email });
       setInviting(false);
     },
   });
@@ -56,8 +56,14 @@ export default function Users() {
 
       {inviteResult && (
         <div className="card">
-          <h2>Invite sent</h2>
-          <p className="muted">Email delivery isn't wired up yet — copy this link and send it manually. It expires in 14 days.</p>
+          <h2>Invite created</h2>
+          {inviteResult.email?.sent ? (
+            <p>✉️ Email delivered to the invitee. Expires in 14 days.</p>
+          ) : inviteResult.email?.logged ? (
+            <p className="muted">Email service isn't configured — the link was logged to the API console. You can still copy it below.</p>
+          ) : (
+            <p className="muted">Email couldn't be sent ({inviteResult.email?.error || 'unknown reason'}). Copy the link and send it manually.</p>
+          )}
           <InviteLinkCopy token={inviteResult.token} />
         </div>
       )}

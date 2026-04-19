@@ -286,6 +286,7 @@ function SigningLinkCard({ contract, sendResult }) {
     ? `${window.location.origin}/sign/${token}`
     : null;
   const expires = sendResult?.signing_token_expires_at || contract.signing_token_expires_at;
+  const emailInfo = sendResult?.email;
 
   const copy = () => {
     if (link) navigator.clipboard.writeText(link);
@@ -294,6 +295,19 @@ function SigningLinkCard({ contract, sendResult }) {
   return (
     <div className="card">
       <h2>Signing link</h2>
+      {emailInfo && emailInfo.sent && (
+        <p>✉️ Email sent to <strong>{emailInfo.to}</strong>.</p>
+      )}
+      {emailInfo && !emailInfo.sent && emailInfo.logged && (
+        <p className="muted">Email service isn't configured — the link was logged to the API console. Send it manually below.</p>
+      )}
+      {emailInfo && !emailInfo.sent && !emailInfo.logged && (
+        <p className="muted">
+          {emailInfo.reason === 'no_recipient'
+            ? 'No email on file for this client — copy the link below and send it manually.'
+            : `Email failed (${emailInfo.error || 'unknown'}). Copy the link below and send it manually.`}
+        </p>
+      )}
       {link ? (
         <>
           <p className="muted small">Send this link to the client signer. It expires {expires ? new Date(expires).toLocaleDateString() : 'in 30 days'}.</p>

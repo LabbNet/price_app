@@ -5,6 +5,8 @@ const { z } = require('zod');
 const db = require('../db/knex');
 const { requireAuth, requireStaff } = require('../middleware/auth');
 const { audit } = require('../services/audit');
+const { sendEmail } = require('../services/email');
+const { inviteEmail } = require('../services/emailTemplates');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -121,7 +123,26 @@ router.post('/invite', requireStaff, async (req, res) => {
     notes: `invited ${parsed.data.email} as ${parsed.data.role}`,
   });
 
-  res.status(201).json({ invite: { id: row.id, token, expires_at } });
+  // Compose a friendly scope label from the targeted clinic/client.
+  let scopeLabel = '';
+  if (parsed.data.clinic_id) {
+    const cn = await db('clinics').where({ id: parsed.data.clinic_id }).first();
+    if (cn?.name) scopeLabel = cn.name;
+  }
+  if (parsed.data.client_id) {
+    const cl = await db('clients').where({ id: parsed.data.client_id }).first();
+    if (cl?.name) scopeLabel = scopeLabel ? `${scopeLabel} · ${cl.name}` : cl.name;
+  }
+
+  // Fire-and-forget: errors are logged by the mailer, invite record is
+  // authoritative and the token is returned so staff can copy the link.
+  const msg = inviteEmail({ invite: row, invitedByEmail: req.user.email, scopeLabel });
+  const emailResult = await sendEmail({ to: row.email, subject: msg.subject, text: msg.text, html: msg.html });
+
+  res.status(201).json({
+    invite: { id: row.id, token, expires_at },
+    email: emailResult,
+  });
 });
 
 router.get('/invites', requireStaff, async (req, res) => {
