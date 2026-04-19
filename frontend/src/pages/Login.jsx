@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
-import { useAuth } from '../auth';
+import { useAuth, landingPath } from '../auth';
 
 export default function Login() {
   const { user, login } = useAuth();
@@ -10,15 +10,15 @@ export default function Login() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  if (user) return <Navigate to="/" replace />;
+  if (user) return <Navigate to={landingPath(user)} replace />;
 
   const onSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setBusy(true);
     try {
-      await login(email.trim(), password);
-      nav('/', { replace: true });
+      const u = await login(email.trim(), password);
+      nav(landingPath(u), { replace: true });
     } catch (err) {
       setError(err.message === 'invalid_credentials' ? 'Wrong email or password.' : err.message);
     } finally {

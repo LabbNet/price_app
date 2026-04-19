@@ -14,6 +14,8 @@ const clients = require('./routes/clients');
 const specialPricing = require('./routes/specialPricing');
 const contractTemplates = require('./routes/contractTemplates');
 const contracts = require('./routes/contracts');
+const users = require('./routes/users');
+const portal = require('./routes/portal');
 
 const app = express();
 
@@ -33,9 +35,10 @@ app.use('/api/clients', clients);
 app.use('/api/special-pricing', specialPricing);
 app.use('/api/contract-templates', contractTemplates);
 app.use('/api/contracts', contracts);
+app.use('/api/users', users);
+app.use('/api/portal', portal);
 
 // Feature route stubs — filled in subsequent commits.
-app.use('/api/users', (req, res) => res.status(501).json({ error: 'not_implemented' }));
 app.use('/api/audit', (req, res) => res.status(501).json({ error: 'not_implemented' }));
 
 app.use((err, req, res, _next) => {

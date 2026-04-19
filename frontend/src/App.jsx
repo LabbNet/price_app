@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import Home from './pages/Home';
 import Login from './pages/Login';
+import AcceptInvite from './pages/AcceptInvite';
 import Products from './pages/Products';
 import Buckets from './pages/Buckets';
 import BucketDetail from './pages/BucketDetail';
@@ -17,9 +18,14 @@ import ContractTemplateDetail from './pages/ContractTemplateDetail';
 import Contracts from './pages/Contracts';
 import ContractDetail from './pages/ContractDetail';
 import SignContract from './pages/SignContract';
+import Users from './pages/Users';
+import PortalHome from './pages/PortalHome';
+import PortalPricing from './pages/PortalPricing';
+import PortalContracts from './pages/PortalContracts';
+import PortalContractDetail from './pages/PortalContractDetail';
 
 const STAFF = ['admin', 'sales', 'legal', 'finance'];
-const STAFF_LEGAL = ['admin', 'legal'];
+const PORTAL = ['clinic_admin', 'clinic_user', 'client_user'];
 
 export default function App() {
   return (
@@ -28,6 +34,7 @@ export default function App() {
         {/* Public routes */}
         <Route path="/login" element={<Login />} />
         <Route path="/sign/:token" element={<SignContract />} />
+        <Route path="/accept-invite/:token" element={<AcceptInvite />} />
 
         {/* Authed routes */}
         <Route
@@ -50,6 +57,13 @@ export default function App() {
           <Route path="/contract-templates/:id" element={<ProtectedRoute allow={STAFF}><ContractTemplateDetail /></ProtectedRoute>} />
           <Route path="/contracts" element={<ProtectedRoute allow={STAFF}><Contracts /></ProtectedRoute>} />
           <Route path="/contracts/:id" element={<ProtectedRoute allow={STAFF}><ContractDetail /></ProtectedRoute>} />
+          <Route path="/users" element={<ProtectedRoute allow={STAFF}><Users /></ProtectedRoute>} />
+
+          {/* Portal (clinic / client users) */}
+          <Route path="/portal" element={<ProtectedRoute allow={PORTAL}><PortalHome /></ProtectedRoute>} />
+          <Route path="/portal/locations/:clientId/pricing" element={<ProtectedRoute allow={PORTAL}><PortalPricing /></ProtectedRoute>} />
+          <Route path="/portal/locations/:clientId/contracts" element={<ProtectedRoute allow={PORTAL}><PortalContracts /></ProtectedRoute>} />
+          <Route path="/portal/contracts/:id" element={<ProtectedRoute allow={PORTAL}><PortalContractDetail /></ProtectedRoute>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -1,10 +1,11 @@
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '../api';
-import { useAuth, isStaff } from '../auth';
+import { useAuth, isStaff, isPortalUser } from '../auth';
 
 export default function Home() {
   const { user } = useAuth();
+  if (isPortalUser(user)) return <Navigate to="/portal" replace />;
   const apiBase = import.meta.env.VITE_API_URL || '(same origin)';
   const health = useQuery({ queryKey: ['health'], queryFn: () => apiGet('/api/health') });
 
@@ -38,6 +39,7 @@ export default function Home() {
           {isStaff(user) && <li><Link to="/special-pricing">Special pricing</Link></li>}
           {isStaff(user) && <li><Link to="/contracts">Contracts</Link></li>}
           {isStaff(user) && <li><Link to="/contract-templates">Contract templates</Link></li>}
+          {isStaff(user) && <li><Link to="/users">Users &amp; invites</Link></li>}
         </ul>
       </div>
     </div>

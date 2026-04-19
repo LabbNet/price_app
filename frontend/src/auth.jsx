@@ -57,5 +57,7 @@ export function useAuth() {
 }
 
 const STAFF_ROLES = new Set(['admin', 'sales', 'legal', 'finance']);
+const PORTAL_ROLES = new Set(['clinic_admin', 'clinic_user', 'client_user']);
 export const isStaff = (u) => !!u && STAFF_ROLES.has(u.role);
-export const isClinic = (u) => !!u && (u.role === 'clinic_admin' || u.role === 'clinic_user');
+export const isPortalUser = (u) => !!u && PORTAL_ROLES.has(u.role);
+export const landingPath = (u) => (isPortalUser(u) ? '/portal' : '/');
