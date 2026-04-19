@@ -5,18 +5,22 @@ import CsvImportModal from '../components/CsvImportModal';
 
 const emptyForm = {
   name: '',
+  sku: '',
   product_type: '',
   unit_of_measure: '',
   labb_cost: '',
+  msrp: '',
   description: '',
   notes: '',
 };
 
 const PRODUCT_CSV_HEADERS = [
-  { key: 'name', required: true },
+  { key: 'name' },
+  { key: 'sku', hint: 'optional identifier' },
   { key: 'product_type' },
   { key: 'unit_of_measure', hint: 'each, case, etc.' },
-  { key: 'labb_cost', required: true, hint: 'decimal, Labb cost per unit' },
+  { key: 'labb_cost', hint: 'decimal, Labb cost per unit' },
+  { key: 'msrp', hint: 'decimal, suggested retail' },
   { key: 'description' },
   { key: 'notes' },
 ];
@@ -77,23 +81,27 @@ export default function Products() {
             <thead>
               <tr>
                 <th>Name</th>
+                <th>SKU</th>
                 <th>Type</th>
                 <th>UoM</th>
                 <th className="num">Labb cost</th>
+                <th className="num">MSRP</th>
                 <th>Status</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {list.data.products.length === 0 && (
-                <tr><td colSpan={6} className="muted center">No products yet.</td></tr>
+                <tr><td colSpan={8} className="muted center">No products yet.</td></tr>
               )}
               {list.data.products.map((p) => (
                 <tr key={p.id} className={p.is_active ? '' : 'dim'}>
                   <td><strong>{p.name}</strong>{p.description && <div className="muted small">{p.description}</div>}</td>
+                  <td className="small"><code>{p.sku || <span className="muted">—</span>}</code></td>
                   <td>{p.product_type || <span className="muted">—</span>}</td>
                   <td>{p.unit_of_measure || <span className="muted">—</span>}</td>
                   <td className="num">${Number(p.labb_cost).toFixed(4)}</td>
+                  <td className="num">{p.msrp != null ? `$${Number(p.msrp).toFixed(4)}` : <span className="muted">—</span>}</td>
                   <td>
                     <span className={`badge ${p.is_active ? 'ok' : 'err'}`}>
                       {p.is_active ? 'active' : 'inactive'}
@@ -130,17 +138,20 @@ export default function Products() {
           templateFilename="products-template.csv"
           parseRow={(r) => ({
             name: r.name || '',
+            sku: r.sku || null,
             product_type: r.product_type || null,
             unit_of_measure: r.unit_of_measure || null,
             labb_cost: r.labb_cost ?? '',
+            msrp: r.msrp ?? '',
             description: r.description || null,
             notes: r.notes || null,
           })}
           previewColumns={[
             { key: 'name', label: 'Name' },
-            { key: 'product_type', label: 'Type' },
+            { key: 'sku', label: 'SKU' },
             { key: 'unit_of_measure', label: 'UoM' },
             { key: 'labb_cost', label: 'Labb cost' },
+            { key: 'msrp', label: 'MSRP' },
           ]}
           onCancel={() => { setImporting(false); importCsv.reset(); }}
           onSubmit={(rows) => importCsv.mutate(rows)}
@@ -161,9 +172,11 @@ export default function Products() {
 function ProductForm({ initial, onSubmit, onCancel, busy, error }) {
   const [f, setF] = useState({
     name: initial.name || '',
+    sku: initial.sku || '',
     product_type: initial.product_type || '',
     unit_of_measure: initial.unit_of_measure || '',
     labb_cost: initial.labb_cost ?? '',
+    msrp: initial.msrp ?? '',
     description: initial.description || '',
     notes: initial.notes || '',
   });
@@ -172,9 +185,11 @@ function ProductForm({ initial, onSubmit, onCancel, busy, error }) {
     e.preventDefault();
     onSubmit({
       name: f.name,
+      sku: f.sku || null,
       product_type: f.product_type || null,
       unit_of_measure: f.unit_of_measure || null,
       labb_cost: Number(f.labb_cost),
+      msrp: f.msrp === '' ? null : Number(f.msrp),
       description: f.description || null,
       notes: f.notes || null,
     });
@@ -184,10 +199,16 @@ function ProductForm({ initial, onSubmit, onCancel, busy, error }) {
     <div className="modal" role="dialog">
       <form className="card modal-card" onSubmit={submit}>
         <h2>{initial.id ? 'Edit product' : 'New product'}</h2>
-        <label className="field">
-          <span>Name *</span>
-          <input value={f.name} onChange={u('name')} required autoFocus />
-        </label>
+        <div className="row gap">
+          <label className="field grow">
+            <span>Name *</span>
+            <input value={f.name} onChange={u('name')} required autoFocus />
+          </label>
+          <label className="field" style={{ width: 180 }}>
+            <span>SKU</span>
+            <input value={f.sku} onChange={u('sku')} placeholder="e.g. ETC-88" />
+          </label>
+        </div>
         <div className="row gap">
           <label className="field grow">
             <span>Type</span>
@@ -198,10 +219,16 @@ function ProductForm({ initial, onSubmit, onCancel, busy, error }) {
             <input value={f.unit_of_measure} onChange={u('unit_of_measure')} placeholder="e.g. each, case" />
           </label>
         </div>
-        <label className="field">
-          <span>Labb cost (cost of goods) *</span>
-          <input type="number" step="0.0001" min="0" value={f.labb_cost} onChange={u('labb_cost')} required />
-        </label>
+        <div className="row gap">
+          <label className="field grow">
+            <span>Labb cost (cost of goods) *</span>
+            <input type="number" step="0.0001" min="0" value={f.labb_cost} onChange={u('labb_cost')} required />
+          </label>
+          <label className="field grow">
+            <span>MSRP</span>
+            <input type="number" step="0.0001" min="0" value={f.msrp} onChange={u('msrp')} placeholder="Suggested retail" />
+          </label>
+        </div>
         <label className="field">
           <span>Description</span>
           <input value={f.description} onChange={u('description')} />
