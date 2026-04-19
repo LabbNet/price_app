@@ -58,4 +58,4 @@ export function useAuth() {
 
 const STAFF_ROLES = new Set(['admin', 'sales', 'legal', 'finance']);
 export const isStaff = (u) => !!u && STAFF_ROLES.has(u.role);
-export const isClient = (u) => !!u && (u.role === 'client_admin' || u.role === 'client_user');
+export const isClinic = (u) => !!u && (u.role === 'clinic_admin' || u.role === 'clinic_user');

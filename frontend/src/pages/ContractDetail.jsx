@@ -5,9 +5,9 @@ import { apiGet, apiPost, apiPatch, apiUrl, getToken } from '../api';
 
 const STATUS_LABEL = {
   draft: 'Draft',
-  sent: 'Sent — awaiting client signature',
-  viewed: 'Viewed — awaiting client signature',
-  signed_by_client: 'Client signed — awaiting Labb counter-signature',
+  sent: 'Sent — awaiting clinic signature',
+  viewed: 'Viewed — awaiting clinic signature',
+  signed_by_clinic: 'Clinic signed — awaiting Labb counter-signature',
   counter_signed: 'Counter-signed',
   active: 'Active',
   terminated: 'Terminated',
@@ -47,8 +47,8 @@ export default function ContractDetail() {
   if (detail.isLoading) return <div className="shell"><p className="muted">Loading…</p></div>;
   if (detail.isError) return <div className="shell"><p className="error">{String(detail.error.message || detail.error)}</p></div>;
 
-  const { contract, clinic, client, template, bucket, signatures } = detail.data;
-  const clientSig = signatures.find((s) => s.party === 'client');
+  const { contract, client, clinic, template, bucket, signatures } = detail.data;
+  const clinicSig = signatures.find((s) => s.party === 'clinic');
   const labbSig = signatures.find((s) => s.party === 'labb');
 
   const downloadUrl = `${apiUrl(`/api/contracts/${contract.id}/pdf`)}`;
@@ -72,9 +72,9 @@ export default function ContractDetail() {
 
       <div className="row-between">
         <div>
-          <h1>{clinic.name}</h1>
+          <h1>{client.name}</h1>
           <p className="muted">
-            {client.name} · {template?.name} v{contract.template_version}
+            {clinic.name} · {template?.name} v{contract.template_version}
             {bucket && <> · Bucket: <Link to={`/buckets/${bucket.id}`}>{bucket.name}</Link></>}
           </p>
         </div>
@@ -96,7 +96,7 @@ export default function ContractDetail() {
             </button>
           </>
         )}
-        {contract.status === 'signed_by_client' && (
+        {contract.status === 'signed_by_clinic' && (
           <button className="btn primary" onClick={() => setCountersigning(true)}>Counter-sign &amp; activate</button>
         )}
         {contract.status === 'active' && (
@@ -154,7 +154,7 @@ export default function ContractDetail() {
 
       <h2>Signatures</h2>
       <div className="card">
-        <SignatureView label="Client" sig={clientSig} />
+        <SignatureView label="Clinic" sig={clinicSig} />
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '1rem 0' }} />
         <SignatureView label="Labb" sig={labbSig} />
       </div>
@@ -196,7 +196,7 @@ function SigningLinkCard({ contract, sendResult }) {
       <h2>Signing link</h2>
       {link ? (
         <>
-          <p className="muted small">Send this link to the clinic signer. It expires {expires ? new Date(expires).toLocaleDateString() : 'in 30 days'}.</p>
+          <p className="muted small">Send this link to the client signer. It expires {expires ? new Date(expires).toLocaleDateString() : 'in 30 days'}.</p>
           <div className="row gap">
             <input className="search grow" readOnly value={link} onFocus={(e) => e.target.select()} />
             <button className="btn primary" onClick={copy}>Copy</button>

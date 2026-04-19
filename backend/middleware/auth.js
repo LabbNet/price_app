@@ -31,18 +31,18 @@ function requireRole(...roles) {
 }
 
 const STAFF_ROLES = ['admin', 'sales', 'legal', 'finance'];
-const CLIENT_ROLES = ['client_admin', 'client_user'];
+const CLINIC_ROLES = ['clinic_admin', 'clinic_user'];
 
 const requireStaff = requireRole(...STAFF_ROLES);
-const requireClient = requireRole(...CLIENT_ROLES);
+const requireClinic = requireRole(...CLINIC_ROLES);
 const requireAdmin = requireRole('admin');
 
 module.exports = {
   requireAuth,
   requireRole,
   requireStaff,
-  requireClient,
+  requireClinic,
   requireAdmin,
   STAFF_ROLES,
-  CLIENT_ROLES,
+  CLINIC_ROLES,
 };

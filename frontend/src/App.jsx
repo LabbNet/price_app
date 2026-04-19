@@ -7,10 +7,10 @@ import Login from './pages/Login';
 import Products from './pages/Products';
 import Buckets from './pages/Buckets';
 import BucketDetail from './pages/BucketDetail';
-import Clients from './pages/Clients';
-import ClientDetail from './pages/ClientDetail';
 import Clinics from './pages/Clinics';
 import ClinicDetail from './pages/ClinicDetail';
+import Clients from './pages/Clients';
+import ClientDetail from './pages/ClientDetail';
 import SpecialPricing from './pages/SpecialPricing';
 import ContractTemplates from './pages/ContractTemplates';
 import ContractTemplateDetail from './pages/ContractTemplateDetail';
@@ -41,10 +41,10 @@ export default function App() {
           <Route path="/products" element={<ProtectedRoute allow={STAFF}><Products /></ProtectedRoute>} />
           <Route path="/buckets" element={<ProtectedRoute allow={STAFF}><Buckets /></ProtectedRoute>} />
           <Route path="/buckets/:id" element={<ProtectedRoute allow={STAFF}><BucketDetail /></ProtectedRoute>} />
-          <Route path="/clients" element={<ProtectedRoute allow={STAFF}><Clients /></ProtectedRoute>} />
-          <Route path="/clients/:id" element={<ProtectedRoute allow={STAFF}><ClientDetail /></ProtectedRoute>} />
           <Route path="/clinics" element={<ProtectedRoute allow={STAFF}><Clinics /></ProtectedRoute>} />
           <Route path="/clinics/:id" element={<ProtectedRoute allow={STAFF}><ClinicDetail /></ProtectedRoute>} />
+          <Route path="/clients" element={<ProtectedRoute allow={STAFF}><Clients /></ProtectedRoute>} />
+          <Route path="/clients/:id" element={<ProtectedRoute allow={STAFF}><ClientDetail /></ProtectedRoute>} />
           <Route path="/special-pricing" element={<ProtectedRoute allow={STAFF}><SpecialPricing /></ProtectedRoute>} />
           <Route path="/contract-templates" element={<ProtectedRoute allow={STAFF}><ContractTemplates /></ProtectedRoute>} />
           <Route path="/contract-templates/:id" element={<ProtectedRoute allow={STAFF}><ContractTemplateDetail /></ProtectedRoute>} />

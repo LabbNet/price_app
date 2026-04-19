@@ -41,7 +41,7 @@ export default function ContractTemplates() {
       </div>
 
       <p className="muted">
-        Templates use <code>{'{{field_name}}'}</code> merge fields. <code>{'{{pricing_table}}'}</code> expands into the clinic's effective pricing when a contract is created.
+        Templates use <code>{'{{field_name}}'}</code> merge fields. <code>{'{{pricing_table}}'}</code> expands into the client's effective pricing when a contract is created.
       </p>
 
       {list.isLoading && <p className="muted">Loading…</p>}
@@ -124,11 +124,11 @@ function NewTemplateForm({ onSubmit, onCancel, busy, error }) {
 
 const DEFAULT_BODY = `LABB PRICING AGREEMENT
 
-This Pricing Agreement ("Agreement") is entered into on {{today}} between Labb and {{clinic_legal_name}} ("Clinic"), a subsidiary or affiliate of {{client_legal_name}} ("Client").
+This Pricing Agreement ("Agreement") is entered into on {{today}} between Labb and {{client_legal_name}} ("Client"), a subsidiary or affiliate of {{clinic_legal_name}} ("Clinic").
 
 1. PRICING
 
-The Clinic agrees to the pricing set forth below for the products and services listed. Pricing is in effect as of the date of signing and remains in effect until terminated by either party.
+The Client agrees to the pricing set forth below for the products and services listed. Pricing is in effect as of the date of signing and remains in effect until terminated by either party.
 
 {{pricing_table}}
 
@@ -140,6 +140,6 @@ This Agreement remains in effect on an evergreen basis until terminated in writi
 
 By signing below, the parties acknowledge and accept the terms of this Agreement.
 
-Clinic:  {{signer_name}}, {{signer_title}}
+Client:  {{signer_name}}, {{signer_title}}
 Labb:    {{labb_signer_name}}, {{labb_signer_title}}
 `;

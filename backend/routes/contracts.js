@@ -19,7 +19,7 @@ publicRouter.get('/sign/:token', async (req, res) => {
   res.json(publicContractView(contract));
 });
 
-const clientSignSchema = z.object({
+const clinicSignSchema = z.object({
   signer_name: z.string().min(1),
   signer_title: z.string().nullable().optional(),
   signer_email: z.string().email(),
@@ -27,13 +27,13 @@ const clientSignSchema = z.object({
 });
 
 publicRouter.post('/sign/:token', async (req, res) => {
-  const parsed = clientSignSchema.safeParse(req.body);
+  const parsed = clinicSignSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
 
   const contract = await loadContractByToken(req.params.token);
   if (!contract) return res.status(404).json({ error: 'invalid_or_expired_token' });
 
-  if (contract.status === 'signed_by_client' || contract.status === 'counter_signed' || contract.status === 'active') {
+  if (contract.status === 'signed_by_clinic' || contract.status === 'counter_signed' || contract.status === 'active') {
     return res.status(409).json({ error: 'already_signed' });
   }
   if (contract.status !== 'sent' && contract.status !== 'viewed') {
@@ -46,7 +46,7 @@ publicRouter.post('/sign/:token', async (req, res) => {
   await db.transaction(async (trx) => {
     await trx('signatures').insert({
       contract_id: contract.id,
-      party: 'client',
+      party: 'clinic',
       signer_name: parsed.data.signer_name,
       signer_title: parsed.data.signer_title || null,
       signer_email: parsed.data.signer_email,
@@ -56,15 +56,15 @@ publicRouter.post('/sign/:token', async (req, res) => {
     await trx('contracts')
       .where({ id: contract.id })
       .update({
-        status: 'signed_by_client',
-        signed_by_client_at: trx.fn.now(),
+        status: 'signed_by_clinic',
+        signed_by_clinic_at: trx.fn.now(),
         updated_at: trx.fn.now(),
       });
   });
 
   await audit({
     req,
-    action: 'contract.sign_client',
+    action: 'contract.sign_clinic',
     entityType: 'contract',
     entityId: contract.id,
     notes: `signer=${parsed.data.signer_email}`,
@@ -91,36 +91,36 @@ publicRouter.post('/view/:token', async (req, res) => {
 
 router.use('/', publicRouter);
 
-// --- Authenticated (staff/client) routes below ---
+// --- Authenticated (staff/clinic) routes below ---
 router.use(requireAuth);
 
 // List
 router.get('/', async (req, res) => {
-  const { clinic_id, client_id, status, template_id } = req.query;
+  const { client_id, clinic_id, status, template_id } = req.query;
   const rows = await db('contracts as c')
-    .join('clinics as cl', 'cl.id', 'c.clinic_id')
-    .join('clients as client', 'client.id', 'cl.client_id')
+    .join('clients as cl', 'cl.id', 'c.client_id')
+    .join('clinics as clinic', 'clinic.id', 'cl.clinic_id')
     .leftJoin('contract_templates as t', 't.id', 'c.template_id')
     .select(
       'c.id',
       'c.status',
       'c.template_version',
       'c.sent_at',
-      'c.signed_by_client_at',
+      'c.signed_by_clinic_at',
       'c.counter_signed_at',
       'c.activated_at',
       'c.terminated_at',
       'c.created_at',
       'c.bucket_id',
-      'cl.id as clinic_id',
-      'cl.name as clinic_name',
-      'client.id as client_id',
-      'client.name as client_name',
+      'cl.id as client_id',
+      'cl.name as client_name',
+      'clinic.id as clinic_id',
+      'clinic.name as clinic_name',
       't.name as template_name',
     )
     .modify((q) => {
-      if (clinic_id) q.where('c.clinic_id', clinic_id);
-      if (client_id) q.where('cl.client_id', client_id);
+      if (client_id) q.where('c.client_id', client_id);
+      if (clinic_id) q.where('cl.clinic_id', clinic_id);
       if (status) q.where('c.status', status);
       if (template_id) q.where('c.template_id', template_id);
     })
@@ -133,17 +133,17 @@ router.get('/:id', async (req, res) => {
   const contract = await db('contracts').where({ id: req.params.id }).first();
   if (!contract) return res.status(404).json({ error: 'not_found' });
 
-  const clinic = await db('clinics').where({ id: contract.clinic_id }).first();
-  const client = await db('clients').where({ id: clinic.client_id }).first();
+  const client = await db('clients').where({ id: contract.client_id }).first();
+  const clinic = await db('clinics').where({ id: client.clinic_id }).first();
   const template = await db('contract_templates').where({ id: contract.template_id }).first();
   const bucket = contract.bucket_id ? await db('pricing_buckets').where({ id: contract.bucket_id }).first() : null;
   const signatures = await db('signatures').where({ contract_id: contract.id }).orderBy('signed_at');
 
-  res.json({ contract, clinic, client, template, bucket, signatures });
+  res.json({ contract, client, clinic, template, bucket, signatures });
 });
 
 const createSchema = z.object({
-  clinic_id: z.string().uuid(),
+  client_id: z.string().uuid(),
   template_id: z.string().uuid(),
   bucket_id: z.string().uuid().nullable().optional(),
   merge_values: z.record(z.string(), z.string()).optional().default({}),
@@ -153,29 +153,29 @@ router.post('/', requireStaff, async (req, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
 
-  const clinic = await db('clinics').where({ id: parsed.data.clinic_id }).first();
-  if (!clinic) return res.status(400).json({ error: 'clinic_not_found' });
+  const client = await db('clients').where({ id: parsed.data.client_id }).first();
+  if (!client) return res.status(400).json({ error: 'client_not_found' });
 
-  const client = await db('clients').where({ id: clinic.client_id }).first();
+  const clinic = await db('clinics').where({ id: client.clinic_id }).first();
   const template = await db('contract_templates').where({ id: parsed.data.template_id }).first();
   if (!template) return res.status(400).json({ error: 'template_not_found' });
 
   let bucketId = parsed.data.bucket_id;
   if (!bucketId) {
-    const current = await db('clinic_bucket_assignments')
-      .where({ clinic_id: clinic.id })
+    const current = await db('client_bucket_assignments')
+      .where({ client_id: client.id })
       .whereNull('unassigned_at')
       .first();
     bucketId = current?.bucket_id || null;
   }
 
-  const context = await buildContext({ clinic, client, bucketId, extra: parsed.data.merge_values });
-  const pricingRows = await buildPricingSnapshot({ clinicId: clinic.id });
+  const context = await buildContext({ client, clinic, bucketId, extra: parsed.data.merge_values });
+  const pricingRows = await buildPricingSnapshot({ clientId: client.id });
   const rendered = renderTemplate({ body: template.body, context, pricingRows });
 
   const [row] = await db('contracts')
     .insert({
-      clinic_id: clinic.id,
+      client_id: client.id,
       template_id: template.id,
       bucket_id: bucketId,
       template_version: template.version,
@@ -207,16 +207,16 @@ router.patch('/:id', requireStaff, async (req, res) => {
   if (!before) return res.status(404).json({ error: 'not_found' });
   if (before.status !== 'draft') return res.status(409).json({ error: 'not_draft' });
 
-  const clinic = await db('clinics').where({ id: before.clinic_id }).first();
-  const client = await db('clients').where({ id: clinic.client_id }).first();
+  const client = await db('clients').where({ id: before.client_id }).first();
+  const clinic = await db('clinics').where({ id: client.clinic_id }).first();
   const template = await db('contract_templates').where({ id: before.template_id }).first();
 
   const mergeValues = parsed.data.merge_values ?? before.merge_values ?? {};
   const bucketId = parsed.data.bucket_id !== undefined ? parsed.data.bucket_id : before.bucket_id;
 
-  const context = await buildContext({ clinic, client, bucketId, extra: mergeValues });
+  const context = await buildContext({ client, clinic, bucketId, extra: mergeValues });
   const pricingRows = parsed.data.refresh_pricing
-    ? await buildPricingSnapshot({ clinicId: clinic.id })
+    ? await buildPricingSnapshot({ clientId: client.id })
     : (before.pricing_snapshot || []);
   const rendered = renderTemplate({ body: template.body, context, pricingRows });
 
@@ -260,7 +260,7 @@ router.post('/:id/send', requireStaff, async (req, res) => {
   res.json({ contract: row, signing_token: token, signing_token_expires_at: expires });
 });
 
-// Counter-sign (Labb). Must be after client has signed. Locks to 'active' and
+// Counter-sign (Labb). Must be after clinic has signed. Locks to 'active' and
 // generates the final PDF snapshot.
 const counterSignSchema = z.object({
   signer_name: z.string().min(1),
@@ -273,16 +273,16 @@ router.post('/:id/counter-sign', requireStaff, async (req, res) => {
 
   const before = await db('contracts').where({ id: req.params.id }).first();
   if (!before) return res.status(404).json({ error: 'not_found' });
-  if (before.status !== 'signed_by_client') {
+  if (before.status !== 'signed_by_clinic') {
     return res.status(409).json({ error: 'not_ready_for_counter_sign', status: before.status });
   }
 
-  const clinic = await db('clinics').where({ id: before.clinic_id }).first();
-  const client = await db('clients').where({ id: clinic.client_id }).first();
+  const client = await db('clients').where({ id: before.client_id }).first();
+  const clinic = await db('clinics').where({ id: client.clinic_id }).first();
   const bucket = before.bucket_id ? await db('pricing_buckets').where({ id: before.bucket_id }).first() : null;
 
-  const clientSig = await db('signatures').where({ contract_id: before.id, party: 'client' }).first();
-  if (!clientSig) return res.status(409).json({ error: 'client_signature_missing' });
+  const clinicSig = await db('signatures').where({ contract_id: before.id, party: 'clinic' }).first();
+  if (!clinicSig) return res.status(409).json({ error: 'clinic_signature_missing' });
 
   const labbSigRow = await db.transaction(async (trx) => {
     const [sig] = await trx('signatures').insert({
@@ -301,10 +301,10 @@ router.post('/:id/counter-sign', requireStaff, async (req, res) => {
   // Generate and write the final PDF
   const pdfPath = await renderContractPdf({
     contract: before,
-    clinic,
     client,
+    clinic,
     bucket,
-    clientSignature: clientSig,
+    clinicSignature: clinicSig,
     labbSignature: labbSigRow,
   });
 
@@ -374,7 +374,7 @@ function publicContractView(contract) {
     rendered_body: contract.rendered_body,
     pricing_snapshot: contract.pricing_snapshot,
     sent_at: contract.sent_at,
-    signed_by_client_at: contract.signed_by_client_at,
+    signed_by_clinic_at: contract.signed_by_clinic_at,
     signing_token_expires_at: contract.signing_token_expires_at,
   };
 }

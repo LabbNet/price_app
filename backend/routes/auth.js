@@ -37,14 +37,14 @@ router.post('/login', async (req, res) => {
       first_name: user.first_name,
       last_name: user.last_name,
       role: user.role,
-      client_id: user.client_id,
+      clinic_id: user.clinic_id,
     },
   });
 });
 
 router.get('/me', requireAuth, (req, res) => {
-  const { id, email, first_name, last_name, role, client_id } = req.user;
-  res.json({ user: { id, email, first_name, last_name, role, client_id } });
+  const { id, email, first_name, last_name, role, clinic_id } = req.user;
+  res.json({ user: { id, email, first_name, last_name, role, clinic_id } });
 });
 
 module.exports = router;

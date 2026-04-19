@@ -33,8 +33,8 @@ export default function Home() {
         <ul>
           {isStaff(user) && <li><Link to="/products">Manage products</Link></li>}
           {isStaff(user) && <li><Link to="/buckets">Pricing buckets</Link></li>}
-          {isStaff(user) && <li><Link to="/clients">Clients</Link></li>}
           {isStaff(user) && <li><Link to="/clinics">Clinics</Link></li>}
+          {isStaff(user) && <li><Link to="/clients">Clients</Link></li>}
           {isStaff(user) && <li><Link to="/special-pricing">Special pricing</Link></li>}
           {isStaff(user) && <li><Link to="/contracts">Contracts</Link></li>}
           {isStaff(user) && <li><Link to="/contract-templates">Contract templates</Link></li>}

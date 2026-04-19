@@ -6,11 +6,11 @@ import { apiGet } from '../api';
  * Reusable modal for creating or editing a special_pricing row.
  * Props:
  *   mode: 'create' | 'edit'
- *   initial: existing row (edit mode) — includes product/clinic context
- *   clinic: { id, name } — lock clinic in create mode
+ *   initial: existing row (edit mode) — includes product/client context
+ *   client: { id, name } — lock client in create mode
  *   onSubmit(data), onCancel, busy, error
  */
-export default function SpecialPricingForm({ mode, initial, clinic, onSubmit, onCancel, busy, error }) {
+export default function SpecialPricingForm({ mode, initial, client, onSubmit, onCancel, busy, error }) {
   const productsQ = useQuery({
     queryKey: ['products', false],
     queryFn: () => apiGet('/api/products'),
@@ -43,7 +43,7 @@ export default function SpecialPricingForm({ mode, initial, clinic, onSubmit, on
       notes: f.notes || null,
     };
     if (mode === 'create') {
-      onSubmit({ clinic_id: clinic.id, product_id: f.product_id, ...base });
+      onSubmit({ client_id: client.id, product_id: f.product_id, ...base });
     } else {
       onSubmit(base);
     }
@@ -55,7 +55,7 @@ export default function SpecialPricingForm({ mode, initial, clinic, onSubmit, on
     <div className="modal" role="dialog">
       <form className="card modal-card" onSubmit={submit}>
         <h2>{mode === 'create' ? 'Add special pricing' : 'Edit special pricing'}</h2>
-        {clinic && <p className="muted">For clinic: <strong>{clinic.name}</strong></p>}
+        {client && <p className="muted">For client: <strong>{client.name}</strong></p>}
 
         {mode === 'create' ? (
           <label className="field"><span>Product *</span>
@@ -76,7 +76,7 @@ export default function SpecialPricingForm({ mode, initial, clinic, onSubmit, on
           <select value={f.condition_type} onChange={u('condition_type')} required>
             <option value="time_limited">Time-limited — active between dates</option>
             <option value="single_order">Single-order — active until used up</option>
-            <option value="client_specific">Client-specific — active until deactivated</option>
+            <option value="clinic_specific">Clinic-specific — active until deactivated</option>
           </select>
         </label>
 

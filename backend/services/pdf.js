@@ -13,18 +13,18 @@ function ensureDir(dir) {
  * Render a finalized contract to PDF and write it to disk.
  *
  *   contract: the contracts row (needs id, rendered_body, pricing_snapshot)
- *   clinic, client, bucket: loaded entities for the header
- *   clientSignature: { signer_name, signer_title, signer_email, signed_at, ip_address }
+ *   client, clinic, bucket: loaded entities for the header
+ *   clinicSignature: { signer_name, signer_title, signer_email, signed_at, ip_address }
  *   labbSignature:   same shape
  *
  * Returns the absolute file path. On failure, throws.
  */
 async function renderContractPdf({
   contract,
-  clinic,
   client,
+  clinic,
   bucket,
-  clientSignature,
+  clinicSignature,
   labbSignature,
 }) {
   ensureDir(CONTRACTS_DIR);
@@ -50,9 +50,9 @@ async function renderContractPdf({
       // Parties
       doc.fillColor('black').fontSize(12).font('Helvetica-Bold').text('Parties');
       doc.fontSize(10).font('Helvetica');
-      doc.text(`Client: ${client?.legal_name || client?.name || ''}`);
       doc.text(`Clinic: ${clinic?.legal_name || clinic?.name || ''}`);
-      if (clinic?.ein) doc.text(`Clinic EIN: ${clinic.ein}`);
+      doc.text(`Client: ${client?.legal_name || client?.name || ''}`);
+      if (client?.ein) doc.text(`Client EIN: ${client.ein}`);
       doc.moveDown();
 
       // Body — split paragraphs on double-newlines, handle the pricing table
@@ -83,7 +83,7 @@ async function renderContractPdf({
       doc.addPage();
       doc.font('Helvetica-Bold').fontSize(14).text('Signatures');
       doc.moveDown(0.5);
-      renderSignatureBlock(doc, 'Client', clientSignature);
+      renderSignatureBlock(doc, 'Clinic', clinicSignature);
       doc.moveDown();
       renderSignatureBlock(doc, 'Labb', labbSignature);
 

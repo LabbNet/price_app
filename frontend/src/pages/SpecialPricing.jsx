@@ -6,22 +6,22 @@ import { apiGet, apiPost } from '../api';
 const CONDITION_LABEL = {
   time_limited: 'Time-limited',
   single_order: 'Single-order',
-  client_specific: 'Client-specific',
+  clinic_specific: 'Clinic-specific',
 };
 
 export default function SpecialPricing() {
   const qc = useQueryClient();
-  const [clientFilter, setClientFilter] = useState('');
+  const [clinicFilter, setClinicFilter] = useState('');
   const [conditionFilter, setConditionFilter] = useState('');
   const [activeFilter, setActiveFilter] = useState('active');
 
-  const clientsQ = useQuery({ queryKey: ['clients', false], queryFn: () => apiGet('/api/clients') });
+  const clinicsQ = useQuery({ queryKey: ['clinics', false], queryFn: () => apiGet('/api/clinics') });
 
   const list = useQuery({
-    queryKey: ['special-pricing', { clientFilter, conditionFilter, activeFilter }],
+    queryKey: ['special-pricing', { clinicFilter, conditionFilter, activeFilter }],
     queryFn: () => {
       const q = new URLSearchParams();
-      if (clientFilter) q.set('client_id', clientFilter);
+      if (clinicFilter) q.set('clinic_id', clinicFilter);
       if (conditionFilter) q.set('condition_type', conditionFilter);
       if (activeFilter === 'active') q.set('active', 'true');
       if (activeFilter === 'inactive') q.set('active', 'false');
@@ -42,20 +42,20 @@ export default function SpecialPricing() {
         <h1>Special pricing</h1>
       </div>
       <p className="muted">
-        One-off pricing that overrides a clinic's bucket. Add new entries from the individual clinic page.
+        One-off pricing that overrides a client's bucket. Add new entries from the individual client page.
       </p>
 
       <div className="card">
         <div className="row gap" style={{ flexWrap: 'wrap' }}>
-          <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)}>
-            <option value="">All clients</option>
-            {(clientsQ.data?.clients || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          <select value={clinicFilter} onChange={(e) => setClinicFilter(e.target.value)}>
+            <option value="">All clinics</option>
+            {(clinicsQ.data?.clinics || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           <select value={conditionFilter} onChange={(e) => setConditionFilter(e.target.value)}>
             <option value="">All conditions</option>
             <option value="time_limited">Time-limited</option>
             <option value="single_order">Single-order</option>
-            <option value="client_specific">Client-specific</option>
+            <option value="clinic_specific">Clinic-specific</option>
           </select>
           <select value={activeFilter} onChange={(e) => setActiveFilter(e.target.value)}>
             <option value="active">Active only</option>
@@ -75,7 +75,7 @@ export default function SpecialPricing() {
           <table className="tbl">
             <thead>
               <tr>
-                <th>Clinic</th>
+                <th>Client</th>
                 <th>Product</th>
                 <th>Condition</th>
                 <th className="num">Unit price</th>
@@ -96,8 +96,8 @@ export default function SpecialPricing() {
                 return (
                   <tr key={sp.id} className={sp.is_active ? '' : 'dim'}>
                     <td>
-                      <Link to={`/clinics/${sp.clinic_id}`}><strong>{sp.clinic_name}</strong></Link>
-                      <div className="muted small"><Link to={`/clients/${sp.client_id}`}>{sp.client_name}</Link></div>
+                      <Link to={`/clients/${sp.client_id}`}><strong>{sp.client_name}</strong></Link>
+                      <div className="muted small"><Link to={`/clinics/${sp.clinic_id}`}>{sp.clinic_name}</Link></div>
                     </td>
                     <td>{sp.product_name}{sp.unit_of_measure && <div className="muted small">{sp.unit_of_measure}</div>}</td>
                     <td><span className="badge">{CONDITION_LABEL[sp.condition_type]}</span></td>
@@ -112,7 +112,7 @@ export default function SpecialPricing() {
                         </span>
                       )}
                       {sp.condition_type === 'single_order' && <span>{sp.uses_count} / {sp.max_uses ?? 1}</span>}
-                      {sp.condition_type === 'client_specific' && <span className="muted">always</span>}
+                      {sp.condition_type === 'clinic_specific' && <span className="muted">always</span>}
                     </td>
                     <td className="small">{sp.reason}</td>
                     <td className="right">

@@ -1,361 +1,220 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '../api';
 import { ClinicForm } from './Clinics';
-import SpecialPricingForm from '../components/SpecialPricingForm';
-import { NewContractForm } from './Contracts';
+import { ClientForm } from './Clients';
+import { parseCsvToObjects } from '../lib/csv';
 
-const CONDITION_LABEL = {
-  time_limited: 'Time-limited',
-  single_order: 'Single-order',
-  client_specific: 'Client-specific',
-};
+const PAGE = 50;
 
 export default function ClinicDetail() {
   const { id } = useParams();
   const qc = useQueryClient();
-  const nav = useNavigate();
   const [editing, setEditing] = useState(false);
-  const [assigning, setAssigning] = useState(false);
-  const [addingSpecial, setAddingSpecial] = useState(false);
-  const [editingSpecial, setEditingSpecial] = useState(null);
-  const [creatingContract, setCreatingContract] = useState(false);
+  const [creatingClient, setCreatingClient] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [bulkAssigning, setBulkAssigning] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [search, setSearch] = useState('');
+  const [bucketFilter, setBucketFilter] = useState('');
 
-  const contractsQ = useQuery({ queryKey: ['contracts', { clinic: id }], queryFn: () => apiGet(`/api/contracts?clinic_id=${id}`) });
-  const createContract = useMutation({
-    mutationFn: (data) => apiPost('/api/contracts', data),
-    onSuccess: (r) => { setCreatingContract(false); nav(`/contracts/${r.contract.id}`); },
+  const clinic = useQuery({ queryKey: ['clinic', id], queryFn: () => apiGet(`/api/clinics/${id}`) });
+  const clients = useQuery({
+    queryKey: ['clients', { clinic_id: id, offset, search, bucketFilter }],
+    queryFn: () => {
+      const q = new URLSearchParams({
+        clinic_id: id,
+        limit: String(PAGE),
+        offset: String(offset),
+      });
+      if (search) q.set('search', search);
+      if (bucketFilter === 'unassigned') q.set('unassigned', 'true');
+      else if (bucketFilter) q.set('bucket_id', bucketFilter);
+      return apiGet(`/api/clients?${q.toString()}`);
+    },
   });
-
-  const detail = useQuery({ queryKey: ['clinic', id], queryFn: () => apiGet(`/api/clinics/${id}`) });
   const buckets = useQuery({ queryKey: ['buckets', false], queryFn: () => apiGet('/api/buckets') });
-  const specials = useQuery({
-    queryKey: ['special-pricing', { clinic: id }],
-    queryFn: () => apiGet(`/api/special-pricing?clinic_id=${id}`),
-  });
-  const effective = useQuery({
-    queryKey: ['effective', id],
-    queryFn: () => apiGet(`/api/special-pricing/resolve-clinic/${id}`),
-  });
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['clinic', id] });
+    qc.invalidateQueries({ queryKey: ['clients'] });
     qc.invalidateQueries({ queryKey: ['clinics'] });
-    qc.invalidateQueries({ queryKey: ['special-pricing'] });
-    qc.invalidateQueries({ queryKey: ['effective', id] });
   };
 
-  const save = useMutation({
+  const saveClinic = useMutation({
     mutationFn: (data) => apiPatch(`/api/clinics/${id}`, data),
     onSuccess: () => { invalidate(); setEditing(false); },
   });
 
-  const assign = useMutation({
-    mutationFn: (data) => apiPost(`/api/clinics/${id}/assign-bucket`, data),
-    onSuccess: () => { invalidate(); setAssigning(false); },
+  const createClient = useMutation({
+    mutationFn: (data) => apiPost('/api/clients', { ...data, clinic_id: id }),
+    onSuccess: () => { invalidate(); setCreatingClient(false); },
   });
 
-  const unassign = useMutation({
-    mutationFn: () => apiPost(`/api/clinics/${id}/unassign-bucket`),
-    onSuccess: () => invalidate(),
+  const bulkImport = useMutation({
+    mutationFn: (rows) => apiPost('/api/clients/import', { clinic_id: id, clients: rows }),
+    onSuccess: () => { invalidate(); setImporting(false); },
   });
 
-  const toggle = useMutation({
-    mutationFn: () => apiPost(`/api/clinics/${id}/${detail.data.clinic.is_active ? 'deactivate' : 'activate'}`),
-    onSuccess: () => invalidate(),
+  const bulkAssign = useMutation({
+    mutationFn: (bucket_id) => apiPost(`/api/clinics/${id}/assign-bucket-to-all`, { bucket_id }),
+    onSuccess: () => { invalidate(); setBulkAssigning(false); },
   });
 
-  const createSpecial = useMutation({
-    mutationFn: (data) => apiPost('/api/special-pricing', data),
-    onSuccess: () => { invalidate(); setAddingSpecial(false); },
-  });
+  if (clinic.isLoading) return <div className="shell"><p className="muted">Loading…</p></div>;
+  if (clinic.isError) return <div className="shell"><p className="error">{String(clinic.error.message || clinic.error)}</p></div>;
 
-  const updateSpecial = useMutation({
-    mutationFn: ({ spId, data }) => apiPatch(`/api/special-pricing/${spId}`, data),
-    onSuccess: () => { invalidate(); setEditingSpecial(null); },
-  });
-
-  const toggleSpecial = useMutation({
-    mutationFn: ({ spId, active }) => apiPost(`/api/special-pricing/${spId}/${active ? 'deactivate' : 'activate'}`),
-    onSuccess: () => invalidate(),
-  });
-
-  if (detail.isLoading) return <div className="shell"><p className="muted">Loading…</p></div>;
-  if (detail.isError) return <div className="shell"><p className="error">{String(detail.error.message || detail.error)}</p></div>;
-
-  const { clinic, current_assignment, assignment_history } = detail.data;
+  const c = clinic.data.clinic;
+  const total = clients.data?.total ?? 0;
+  const pageEnd = Math.min(offset + PAGE, total);
+  const bucketOptions = (buckets.data?.buckets || []).filter((b) => b.is_active);
 
   return (
     <div className="shell">
-      <p className="muted">
-        <Link to="/clinics">← All clinics</Link>
-        {' · '}
-        <Link to={`/clients/${clinic.client_id}`}>{clinic.client_name}</Link>
-      </p>
+      <p className="muted"><Link to="/clinics">← All clinics</Link></p>
 
       <div className="row-between">
         <div>
-          <h1>{clinic.name}</h1>
-          {clinic.legal_name && clinic.legal_name !== clinic.name && <p className="muted">{clinic.legal_name}</p>}
-          {!clinic.is_active && <span className="badge err">inactive</span>}
+          <h1>{c.name}</h1>
+          {c.legal_name && c.legal_name !== c.name && <p className="muted">{c.legal_name}</p>}
+          {!c.is_active && <span className="badge err">inactive</span>}
         </div>
         <div className="row gap">
           <button className="btn ghost" onClick={() => setEditing(true)}>Edit</button>
-          <button className="btn ghost" onClick={() => toggle.mutate()}>
-            {clinic.is_active ? 'Deactivate' : 'Activate'}
-          </button>
         </div>
       </div>
 
       <div className="card">
         <div className="row gap" style={{ flexWrap: 'wrap' }}>
-          <Field label="Contact" value={clinic.contact_name} />
-          <Field label="Email" value={clinic.contact_email} />
-          <Field label="Phone" value={clinic.contact_phone} />
-          <Field label="EIN" value={clinic.ein} />
-          <Field label="Address" value={[clinic.address_line1, clinic.city, clinic.state, clinic.postal_code].filter(Boolean).join(', ')} />
+          <Field label="Contact" value={c.primary_contact_name} />
+          <Field label="Email" value={c.primary_contact_email} />
+          <Field label="Phone" value={c.primary_contact_phone} />
+          <Field label="EIN" value={c.ein} />
+          <Field label="Location" value={[c.city, c.state].filter(Boolean).join(', ')} />
         </div>
-        {clinic.notes && <><h2>Notes</h2><p>{clinic.notes}</p></>}
+        {c.notes && <><h2>Notes</h2><p>{c.notes}</p></>}
       </div>
 
       <div className="row-between" style={{ marginTop: '1.5rem' }}>
-        <h2>Pricing bucket</h2>
+        <h2>Clients ({total})</h2>
         <div className="row gap">
-          {current_assignment && (
-            <button className="btn ghost" onClick={() => { if (confirm('Unassign the current bucket?')) unassign.mutate(); }}>
-              Unassign
-            </button>
-          )}
-          <button className="btn primary" onClick={() => setAssigning(true)}>
-            {current_assignment ? 'Switch bucket' : 'Assign bucket'}
+          <button className="btn ghost" onClick={() => setBulkAssigning(true)} disabled={total === 0}>
+            Bulk-assign bucket
           </button>
+          <button className="btn ghost" onClick={() => setImporting(true)}>Import CSV</button>
+          <button className="btn primary" onClick={() => setCreatingClient(true)}>+ Add client</button>
         </div>
       </div>
 
       <div className="card">
-        {current_assignment ? (
-          <>
-            <p><strong><Link to={`/buckets/${current_assignment.bucket_id}`}>{current_assignment.bucket_name}</Link></strong></p>
-            <p className="muted small">Assigned {new Date(current_assignment.assigned_at).toLocaleString()}{current_assignment.assigned_by_email ? ` by ${current_assignment.assigned_by_email}` : ''}</p>
-          </>
-        ) : (
-          <p className="muted">No bucket assigned.</p>
-        )}
+        <div className="row gap">
+          <input
+            className="search"
+            placeholder="Search by name, city, state, email…"
+            value={search}
+            onChange={(e) => { setOffset(0); setSearch(e.target.value); }}
+          />
+          <select value={bucketFilter} onChange={(e) => { setOffset(0); setBucketFilter(e.target.value); }}>
+            <option value="">All buckets</option>
+            <option value="unassigned">— Unassigned —</option>
+            {bucketOptions.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </div>
       </div>
 
-      <div className="row-between" style={{ marginTop: '1.5rem' }}>
-        <h2>Special pricing</h2>
-        <button className="btn primary" onClick={() => setAddingSpecial(true)}>+ Add special pricing</button>
-      </div>
-      <p className="muted">Overrides the bucket price for the conditions you set. Precedence: single-order &gt; time-limited &gt; client-specific.</p>
+      {clients.isLoading && <p className="muted">Loading clients…</p>}
+      {clients.isError && <p className="error">{String(clients.error.message || clients.error)}</p>}
 
-      <div className="card no-pad">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Product</th>
-              <th>Condition</th>
-              <th className="num">Unit price</th>
-              <th className="num">Margin</th>
-              <th>Window / uses</th>
-              <th>Reason</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {specials.isLoading && <tr><td colSpan={7} className="muted center">Loading…</td></tr>}
-            {specials.data && specials.data.special_pricing.length === 0 && (
-              <tr><td colSpan={7} className="muted center">No special pricing. This clinic uses its bucket price for everything.</td></tr>
-            )}
-            {specials.data && specials.data.special_pricing.map((sp) => {
-              const unit = Number(sp.unit_price);
-              const cost = Number(sp.labb_cost);
-              const marginPct = unit > 0 ? ((unit - cost) / unit) * 100 : 0;
-              return (
-                <tr key={sp.id} className={sp.is_active ? '' : 'dim'}>
-                  <td>{sp.product_name}{sp.unit_of_measure && <div className="muted small">{sp.unit_of_measure}</div>}</td>
-                  <td><span className="badge">{CONDITION_LABEL[sp.condition_type]}</span></td>
-                  <td className="num">${unit.toFixed(4)}</td>
-                  <td className="num"><span className={`badge ${marginPct < 0 ? 'err' : 'ok'}`}>{marginPct.toFixed(1)}%</span></td>
-                  <td className="small">
-                    {sp.condition_type === 'time_limited' && (
-                      <span>
-                        {sp.effective_from ? new Date(sp.effective_from).toLocaleDateString() : '—'}
-                        {' → '}
-                        {sp.effective_until ? new Date(sp.effective_until).toLocaleDateString() : '—'}
-                      </span>
-                    )}
-                    {sp.condition_type === 'single_order' && <span>{sp.uses_count} / {sp.max_uses ?? 1}</span>}
-                    {sp.condition_type === 'client_specific' && <span className="muted">always</span>}
-                  </td>
-                  <td className="small">{sp.reason}</td>
-                  <td className="right">
-                    <button className="btn ghost" onClick={() => setEditingSpecial(sp)}>Edit</button>
-                    <button className="btn ghost" onClick={() => toggleSpecial.mutate({ spId: sp.id, active: sp.is_active })}>
-                      {sp.is_active ? 'Deactivate' : 'Activate'}
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <h2 style={{ marginTop: '1.5rem' }}>Effective pricing</h2>
-      <p className="muted">What this clinic is actually priced at today. Source shows whether the price comes from special pricing or the assigned bucket.</p>
-      <div className="card no-pad">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Product</th>
-              <th>Source</th>
-              <th className="num">Unit price</th>
-              <th className="num">Labb cost</th>
-              <th className="num">Margin</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {effective.isLoading && <tr><td colSpan={6} className="muted center">Resolving…</td></tr>}
-            {effective.data && effective.data.effective.length === 0 && (
-              <tr><td colSpan={6} className="muted center">No effective pricing. Assign a bucket or add special pricing.</td></tr>
-            )}
-            {effective.data && effective.data.effective.map((r) => {
-              const margin = r.unit_price - r.labb_cost;
-              const marginPct = r.unit_price > 0 ? (margin / r.unit_price) * 100 : 0;
-              return (
-                <tr key={r.product_id}>
-                  <td>{r.product_name}{r.unit_of_measure && <div className="muted small">{r.unit_of_measure}</div>}</td>
-                  <td>
-                    <span className={`badge ${r.source === 'special' ? '' : 'ok'}`}>
-                      {r.source === 'special' ? `Special (${CONDITION_LABEL[r.condition_type]})` : 'Bucket'}
-                    </span>
-                  </td>
-                  <td className="num">${Number(r.unit_price).toFixed(4)}</td>
-                  <td className="num muted">${Number(r.labb_cost).toFixed(4)}</td>
-                  <td className="num">
-                    <span className={`badge ${margin < 0 ? 'err' : 'ok'}`}>{marginPct.toFixed(1)}%</span>
-                    <div className="muted small">${margin.toFixed(4)}</div>
-                  </td>
-                  <td className="small">{r.source === 'special' ? r.reason : (r.notes || <span className="muted">—</span>)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="row-between" style={{ marginTop: '1.5rem' }}>
-        <h2>Contracts</h2>
-        <button className="btn primary" onClick={() => setCreatingContract(true)}>+ New contract</button>
-      </div>
-      <div className="card no-pad">
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Template</th>
-              <th>Status</th>
-              <th>Sent</th>
-              <th>Signed</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {contractsQ.isLoading && <tr><td colSpan={5} className="muted center">Loading…</td></tr>}
-            {contractsQ.data && contractsQ.data.contracts.length === 0 && (
-              <tr><td colSpan={5} className="muted center">No contracts yet.</td></tr>
-            )}
-            {contractsQ.data && contractsQ.data.contracts.map((c) => (
-              <tr key={c.id}>
-                <td><Link to={`/contracts/${c.id}`}>{c.template_name || '—'}</Link> <span className="muted small">v{c.template_version}</span></td>
-                <td><span className={`badge ${c.status === 'active' ? 'ok' : c.status === 'terminated' ? 'err' : ''}`}>{c.status}</span></td>
-                <td className="small">{c.sent_at ? new Date(c.sent_at).toLocaleDateString() : <span className="muted">—</span>}</td>
-                <td className="small">{c.counter_signed_at ? new Date(c.counter_signed_at).toLocaleDateString() : c.signed_by_client_at ? new Date(c.signed_by_client_at).toLocaleDateString() + ' (client)' : <span className="muted">—</span>}</td>
-                <td className="right"><Link className="btn ghost" to={`/contracts/${c.id}`}>Open</Link></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {assignment_history.length > 0 && (
+      {clients.data && (
         <>
-          <h2 style={{ marginTop: '1.5rem' }}>Bucket assignment history</h2>
           <div className="card no-pad">
             <table className="tbl">
               <thead>
                 <tr>
+                  <th>Name</th>
+                  <th>Location</th>
+                  <th>Contact</th>
                   <th>Bucket</th>
-                  <th>Assigned</th>
-                  <th>Closed</th>
-                  <th>By</th>
+                  <th>Status</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
-                {assignment_history.map((h) => (
-                  <tr key={h.id}>
-                    <td><Link to={`/buckets/${h.bucket_id}`}>{h.bucket_name}</Link></td>
-                    <td className="small">{new Date(h.assigned_at).toLocaleString()}</td>
-                    <td className="small">{h.unassigned_at ? new Date(h.unassigned_at).toLocaleString() : <span className="badge ok">current</span>}</td>
-                    <td className="small muted">{h.assigned_by_email || '—'}</td>
+                {clients.data.clients.length === 0 && (
+                  <tr><td colSpan={6} className="muted center">No clients match.</td></tr>
+                )}
+                {clients.data.clients.map((cl) => (
+                  <tr key={cl.id} className={cl.is_active ? '' : 'dim'}>
+                    <td><Link to={`/clients/${cl.id}`}><strong>{cl.name}</strong></Link></td>
+                    <td className="small">{[cl.city, cl.state].filter(Boolean).join(', ') || <span className="muted">—</span>}</td>
+                    <td className="small">
+                      {cl.contact_name || <span className="muted">—</span>}
+                      {cl.contact_email && <div className="muted">{cl.contact_email}</div>}
+                    </td>
+                    <td>
+                      {cl.bucket_name
+                        ? <Link to={`/buckets/${cl.bucket_id}`}>{cl.bucket_name}</Link>
+                        : <span className="muted">Unassigned</span>}
+                    </td>
+                    <td><span className={`badge ${cl.is_active ? 'ok' : 'err'}`}>{cl.is_active ? 'active' : 'inactive'}</span></td>
+                    <td className="right">
+                      <Link className="btn ghost" to={`/clients/${cl.id}`}>Open</Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {total > PAGE && (
+            <div className="row-between">
+              <span className="muted small">{offset + 1}–{pageEnd} of {total}</span>
+              <div className="row gap">
+                <button className="btn ghost" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>← Prev</button>
+                <button className="btn ghost" disabled={pageEnd >= total} onClick={() => setOffset(offset + PAGE)}>Next →</button>
+              </div>
+            </div>
+          )}
         </>
       )}
 
       {editing && (
         <ClinicForm
-          initial={clinic}
+          initial={c}
           title="Edit clinic"
           onCancel={() => setEditing(false)}
-          onSubmit={(data) => save.mutate(data)}
-          busy={save.isPending}
-          error={save.error}
+          onSubmit={(data) => saveClinic.mutate(data)}
+          busy={saveClinic.isPending}
+          error={saveClinic.error}
         />
       )}
-      {assigning && (
-        <AssignBucketForm
-          buckets={(buckets.data?.buckets || []).filter((b) => b.is_active)}
-          current={current_assignment}
-          onCancel={() => setAssigning(false)}
-          onSubmit={(data) => assign.mutate(data)}
-          busy={assign.isPending}
-          error={assign.error}
+      {creatingClient && (
+        <ClientForm
+          onCancel={() => setCreatingClient(false)}
+          onSubmit={(data) => createClient.mutate(data)}
+          busy={createClient.isPending}
+          error={createClient.error}
         />
       )}
-      {addingSpecial && (
-        <SpecialPricingForm
-          mode="create"
-          clinic={{ id: clinic.id, name: clinic.name }}
-          onCancel={() => setAddingSpecial(false)}
-          onSubmit={(data) => createSpecial.mutate(data)}
-          busy={createSpecial.isPending}
-          error={createSpecial.error}
+      {importing && (
+        <ImportCsv
+          onCancel={() => setImporting(false)}
+          onSubmit={(rows) => bulkImport.mutate(rows)}
+          busy={bulkImport.isPending}
+          error={bulkImport.error}
+          result={bulkImport.data}
         />
       )}
-      {editingSpecial && (
-        <SpecialPricingForm
-          mode="edit"
-          initial={editingSpecial}
-          clinic={{ id: clinic.id, name: clinic.name }}
-          onCancel={() => setEditingSpecial(null)}
-          onSubmit={(data) => updateSpecial.mutate({ spId: editingSpecial.id, data })}
-          busy={updateSpecial.isPending}
-          error={updateSpecial.error}
-        />
-      )}
-      {creatingContract && (
-        <NewContractForm
-          initial={{ clinic_id: clinic.id, clinic_name: clinic.name, client_id: clinic.client_id }}
-          onCancel={() => setCreatingContract(false)}
-          onSubmit={(data) => createContract.mutate(data)}
-          busy={createContract.isPending}
-          error={createContract.error}
+      {bulkAssigning && (
+        <BulkAssign
+          buckets={bucketOptions}
+          clientCount={total}
+          clinicName={c.name}
+          onCancel={() => setBulkAssigning(false)}
+          onSubmit={(bucket_id) => bulkAssign.mutate(bucket_id)}
+          busy={bulkAssign.isPending}
+          error={bulkAssign.error}
+          result={bulkAssign.data}
         />
       )}
     </div>
@@ -371,32 +230,116 @@ function Field({ label, value }) {
   );
 }
 
-function AssignBucketForm({ buckets, current, onSubmit, onCancel, busy, error }) {
-  const [bucketId, setBucketId] = useState(buckets[0]?.id || '');
-  const [notes, setNotes] = useState('');
-  const submit = (e) => {
-    e.preventDefault();
-    onSubmit({ bucket_id: bucketId, notes: notes || null });
+function ImportCsv({ onSubmit, onCancel, busy, error, result }) {
+  const [text, setText] = useState('');
+  const [preview, setPreview] = useState(null);
+
+  const onFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = () => setText(String(r.result || ''));
+    r.readAsText(file);
   };
+
+  const parse = () => {
+    const rows = parseCsvToObjects(text).map((r) => ({
+      name: r.name || '',
+      legal_name: r.legal_name || null,
+      ein: r.ein || null,
+      contact_name: r.contact_name || null,
+      contact_email: r.contact_email || null,
+      contact_phone: r.contact_phone || null,
+      address_line1: r.address_line1 || r.address || null,
+      address_line2: r.address_line2 || null,
+      city: r.city || null,
+      state: r.state || null,
+      postal_code: r.postal_code || r.zip || null,
+      notes: r.notes || null,
+    }));
+    setPreview(rows);
+  };
+
+  const submit = () => {
+    if (!preview) return;
+    const valid = preview.filter((r) => r.name);
+    onSubmit(valid);
+  };
+
   return (
     <div className="modal" role="dialog">
-      <form className="card modal-card" onSubmit={submit}>
-        <h2>{current ? 'Switch bucket' : 'Assign bucket'}</h2>
-        {current && <p className="muted">Currently on <strong>{current.bucket_name}</strong>. Assigning a new bucket closes the current assignment.</p>}
-        <label className="field"><span>Bucket *</span>
-          <select value={bucketId} onChange={(e) => setBucketId(e.target.value)} required>
+      <div className="card modal-card" style={{ maxWidth: 780 }}>
+        <h2>Import clients from CSV</h2>
+        <p className="muted">
+          Expected headers (case-insensitive): <code>name</code> (required), <code>legal_name</code>, <code>ein</code>,{' '}
+          <code>contact_name</code>, <code>contact_email</code>, <code>contact_phone</code>,{' '}
+          <code>address_line1</code>, <code>city</code>, <code>state</code>, <code>postal_code</code>, <code>notes</code>.
+        </p>
+        <label className="field"><span>Choose file</span>
+          <input type="file" accept=".csv,text/csv" onChange={onFile} />
+        </label>
+        <label className="field"><span>…or paste CSV</span>
+          <textarea rows={6} value={text} onChange={(e) => setText(e.target.value)} placeholder="name,city,state..." />
+        </label>
+        <div className="row gap">
+          <button type="button" className="btn ghost" onClick={parse} disabled={!text}>Parse</button>
+          {preview && <span className="muted small">Parsed {preview.length} row(s), {preview.filter((r) => r.name).length} valid (have a name).</span>}
+        </div>
+        {preview && preview.length > 0 && (
+          <div className="card no-pad" style={{ maxHeight: 240, overflow: 'auto' }}>
+            <table className="tbl">
+              <thead><tr><th>Name</th><th>City</th><th>State</th><th>Email</th></tr></thead>
+              <tbody>
+                {preview.slice(0, 25).map((r, i) => (
+                  <tr key={i}>
+                    <td>{r.name || <span className="error">missing</span>}</td>
+                    <td>{r.city || <span className="muted">—</span>}</td>
+                    <td>{r.state || <span className="muted">—</span>}</td>
+                    <td className="small">{r.contact_email || <span className="muted">—</span>}</td>
+                  </tr>
+                ))}
+                {preview.length > 25 && <tr><td colSpan={4} className="muted center">…and {preview.length - 25} more</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {error && <p className="error">{String(error.message || error)}</p>}
+        {result && <p className="muted">✓ Imported {result.imported} client(s).</p>}
+        <div className="row gap end">
+          <button type="button" className="btn ghost" onClick={onCancel}>Close</button>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={!preview || preview.filter((r) => r.name).length === 0 || busy}
+            onClick={submit}
+          >{busy ? 'Importing…' : `Import ${preview ? preview.filter((r) => r.name).length : 0}`}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BulkAssign({ buckets, clientCount, clinicName, onSubmit, onCancel, busy, error, result }) {
+  const [bucketId, setBucketId] = useState(buckets[0]?.id || '');
+  return (
+    <div className="modal" role="dialog">
+      <div className="card modal-card">
+        <h2>Bulk-assign bucket</h2>
+        <p className="muted">Assigns the selected bucket to every active client under <strong>{clinicName}</strong> ({clientCount} client{clientCount === 1 ? '' : 's'}). Prior assignments are closed.</p>
+        <label className="field"><span>Bucket</span>
+          <select value={bucketId} onChange={(e) => setBucketId(e.target.value)}>
             {buckets.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </label>
-        <label className="field"><span>Notes (optional)</span>
-          <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reason for this assignment (visible in history)" />
-        </label>
         {error && <p className="error">{String(error.message || error)}</p>}
+        {result && <p className="muted">✓ Updated {result.updated} client(s).</p>}
         <div className="row gap end">
-          <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
-          <button type="submit" className="btn primary" disabled={!bucketId || busy}>{busy ? 'Saving…' : 'Save'}</button>
+          <button type="button" className="btn ghost" onClick={onCancel}>Close</button>
+          <button type="button" className="btn primary" disabled={!bucketId || busy} onClick={() => onSubmit(bucketId)}>
+            {busy ? 'Assigning…' : 'Assign to all'}
+          </button>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

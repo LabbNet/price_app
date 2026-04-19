@@ -63,7 +63,7 @@ export default function SignContract() {
   );
   if (!contract) return null;
 
-  if (done || contract.status === 'signed_by_client' || contract.status === 'active' || contract.status === 'counter_signed') {
+  if (done || contract.status === 'signed_by_clinic' || contract.status === 'active' || contract.status === 'counter_signed') {
     return (
       <div className="shell">
         <div className="card">

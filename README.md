@@ -1,18 +1,18 @@
 # Labb Pricing App
 
-Complex pricing, contracts, and in-app e-sign for Labb clients and their clinics.
+Complex pricing, contracts, and in-app e-sign for Labb clinics and their clients.
 
 **Status:** scaffold v0.1 — foundation only. Feature routes return `501 not_implemented` until built out.
 
 ## What this app does
 
-- **Pricing buckets** — reusable price lists (product, UoM, unit price, total price, notes). Copy a bucket, tweak it, assign to another client.
-- **Clients & clinics** — one parent client can have many clinics (e.g. 250). Each clinic signs its own contract.
-- **Special (conditional) pricing** — one-off overrides on top of a clinic's bucket: time-limited, single-order, or client-specific.
+- **Pricing buckets** — reusable price lists (product, UoM, unit price, total price, notes). Copy a bucket, tweak it, assign to another clinic.
+- **Clinics & clients** — one parent clinic can have many clients (e.g. 250). Each client signs its own contract.
+- **Special (conditional) pricing** — one-off overrides on top of a client's bucket: time-limited, single-order, or clinic-specific.
 - **Labb cost of goods** — stored per product so margin can be tracked.
-- **Contract templates + e-sign** — editable templates with merge fields. Client signs first, Labb counter-signs. Immutable PDF snapshot on signing.
+- **Contract templates + e-sign** — editable templates with merge fields. Clinic signs first, Labb counter-signs. Immutable PDF snapshot on signing.
 - **Audit log** — every pricing and contract change tracked.
-- **Roles** — Labb staff: `admin`, `sales`, `legal`, `finance`. Clients: `client_admin`, `client_user`.
+- **Roles** — Labb staff: `admin`, `sales`, `legal`, `finance`. Clinics: `clinic_admin`, `clinic_user`.
 
 ## Layout
 
@@ -66,26 +66,26 @@ To deploy: push this repo, then in Render → New → Blueprint, point at the re
 
 | Table | Purpose |
 |---|---|
-| `users` | Labb staff + client logins (role-based) |
-| `clients` | Parent organizations |
-| `clinics` | Individual clinics under a client |
+| `users` | Labb staff + clinic logins (role-based) |
+| `clinics` | Parent organizations |
+| `clients` | Individual clients under a clinic |
 | `products` | Catalog w/ `labb_cost` for margin |
 | `pricing_buckets` + `bucket_items` | Reusable price lists |
-| `clinic_bucket_assignments` | Which bucket each clinic is on |
+| `client_bucket_assignments` | Which bucket each client is on |
 | `special_pricing` | Conditional per-product overrides |
 | `contract_templates` | Editable templates w/ merge fields |
-| `contracts` | Per-clinic signed instance + immutable pricing snapshot |
-| `signatures` | Client + Labb counter-signatures (IP, timestamp) |
-| `email_invites` | Magic links for new clinic user onboarding |
+| `contracts` | Per-client signed instance + immutable pricing snapshot |
+| `signatures` | Clinic + Labb counter-signatures (IP, timestamp) |
+| `email_invites` | Magic links for new client user onboarding |
 | `audit_log` | Every pricing/contract/user change |
 
 ## Next milestones
 
 1. Products CRUD + margin-aware pricing
 2. Pricing buckets CRUD + copy
-3. Clients & clinics CRUD + bulk import
+3. Clinics & clients CRUD + bulk import
 4. Special pricing UI + expiration enforcement
 5. Contract template editor + merge field engine
 6. E-sign flow + PDF snapshot (local disk → R2 later)
-7. Client portal (login, view my pricing, sign contracts)
+7. Clinic portal (login, view my pricing, sign contracts)
 8. Audit log viewer + margin dashboard

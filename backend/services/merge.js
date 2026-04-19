@@ -6,16 +6,16 @@ const { resolveEffectivePrice } = require('./pricing');
  *
  * Syntax: {{field_name}}
  *
- * Standard fields (auto-populated from clinic/client/bucket):
- *   {{client_name}}          {{client_legal_name}}   {{client_ein}}
- *   {{client_address}}
+ * Standard fields (auto-populated from client/clinic/bucket):
  *   {{clinic_name}}          {{clinic_legal_name}}   {{clinic_ein}}
- *   {{clinic_address}}       {{clinic_contact_name}} {{clinic_contact_email}}
+ *   {{clinic_address}}
+ *   {{client_name}}          {{client_legal_name}}   {{client_ein}}
+ *   {{client_address}}       {{client_contact_name}} {{client_contact_email}}
  *   {{bucket_name}}
  *   {{today}}                {{effective_date}}
  *
  * Special tokens (expanded to rendered blocks):
- *   {{pricing_table}}        — effective pricing table for this clinic
+ *   {{pricing_table}}        — effective pricing table for this client
  *   {{signer_name}}          — left as placeholder, filled at sign time
  *   {{signer_title}}
  *   {{signer_email}}
@@ -26,21 +26,21 @@ const { resolveEffectivePrice } = require('./pricing');
  * template (template.merge_fields is an array of { key, label } objects).
  */
 
-async function buildContext({ clinic, client, bucketId = null, extra = {} }) {
+async function buildContext({ client, clinic, bucketId = null, extra = {} }) {
   const today = new Date();
   const todayStr = today.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
   const ctx = {
-    client_name: client?.name || '',
-    client_legal_name: client?.legal_name || client?.name || '',
-    client_ein: client?.ein || '',
-    client_address: formatAddress(client),
     clinic_name: clinic?.name || '',
     clinic_legal_name: clinic?.legal_name || clinic?.name || '',
     clinic_ein: clinic?.ein || '',
-    clinic_address: formatAddress(clinic, { clinic: true }),
-    clinic_contact_name: clinic?.contact_name || '',
-    clinic_contact_email: clinic?.contact_email || '',
+    clinic_address: formatAddress(clinic),
+    client_name: client?.name || '',
+    client_legal_name: client?.legal_name || client?.name || '',
+    client_ein: client?.ein || '',
+    client_address: formatAddress(client, { client: true }),
+    client_contact_name: client?.contact_name || '',
+    client_contact_email: client?.contact_email || '',
     today: todayStr,
     effective_date: todayStr,
     signer_name: '__SIGNER_NAME__',
@@ -60,9 +60,9 @@ async function buildContext({ clinic, client, bucketId = null, extra = {} }) {
   return ctx;
 }
 
-function formatAddress(e, { clinic = false } = {}) {
+function formatAddress(e, { client = false } = {}) {
   if (!e) return '';
-  const line1 = clinic ? e.address_line1 : e.address_line1;
+  const line1 = client ? e.address_line1 : e.address_line1;
   const line2 = e.address_line2 || '';
   const cityLine = [e.city, e.state].filter(Boolean).join(', ');
   const full = [line1, line2, [cityLine, e.postal_code].filter(Boolean).join(' ')].filter(Boolean).join(', ');
@@ -70,15 +70,15 @@ function formatAddress(e, { clinic = false } = {}) {
 }
 
 /**
- * Resolve the effective price list for a clinic, returning a structured
+ * Resolve the effective price list for a client, returning a structured
  * snapshot that can be frozen into contracts.pricing_snapshot and rendered
  * both as HTML (for display) and as plain text (for PDF).
  */
-async function buildPricingSnapshot({ clinicId }) {
+async function buildPricingSnapshot({ clientId }) {
   const products = await db('products').where({ is_active: true }).orderBy('name');
   const rows = [];
   for (const p of products) {
-    const r = await resolveEffectivePrice({ clinicId, productId: p.id });
+    const r = await resolveEffectivePrice({ clientId, productId: p.id });
     if (r.source === 'none') continue;
     rows.push({
       product_id: p.id,

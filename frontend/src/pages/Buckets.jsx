@@ -41,7 +41,7 @@ export default function Buckets() {
       </div>
 
       <p className="muted">
-        Buckets are reusable price lists. Assign a bucket to any clinic; copy one to tweak it for another client.
+        Buckets are reusable price lists. Assign a bucket to any client; copy one to tweak it for another clinic.
       </p>
 
       {list.isLoading && <p className="muted">Loading…</p>}
