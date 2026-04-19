@@ -132,4 +132,26 @@ router.post('/:id/assign-bucket-to-all', requireStaff, async (req, res) => {
   res.json(result);
 });
 
+// Bulk import — accepts an array of clinic rows. All-or-nothing transaction.
+router.post('/import', requireStaff, async (req, res) => {
+  const importSchema = z.object({
+    clinics: z.array(clinicSchema).min(1).max(5000),
+  });
+  const parsed = importSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
+
+  const inserted = await db.transaction(async (trx) => {
+    return trx('clinics').insert(parsed.data.clinics).returning(['id', 'name']);
+  });
+
+  await audit({
+    req,
+    action: 'clinic.bulk_import',
+    entityType: 'clinic',
+    notes: `imported ${inserted.length} clinics`,
+    after: { count: inserted.length },
+  });
+  res.status(201).json({ imported: inserted.length, clinics: inserted });
+});
+
 module.exports = router;

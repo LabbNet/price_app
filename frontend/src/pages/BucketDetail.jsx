@@ -2,6 +2,14 @@ import { useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../api';
+import CsvImportModal from '../components/CsvImportModal';
+
+const BUCKET_ITEMS_CSV_HEADERS = [
+  { key: 'product_name', required: true, hint: 'matched against product catalog' },
+  { key: 'unit_price', required: true },
+  { key: 'total_price', hint: 'optional' },
+  { key: 'notes', hint: 'optional' },
+];
 
 export default function BucketDetail() {
   const { id } = useParams();
@@ -12,6 +20,7 @@ export default function BucketDetail() {
   const [addingItem, setAddingItem] = useState(false);
   const [copying, setCopying] = useState(false);
   const [editingItemId, setEditingItemId] = useState(null);
+  const [importing, setImporting] = useState(false);
 
   const detail = useQuery({
     queryKey: ['bucket', id],
@@ -57,6 +66,11 @@ export default function BucketDetail() {
     onSuccess: () => invalidate(),
   });
 
+  const importItems = useMutation({
+    mutationFn: (items) => apiPost(`/api/buckets/${id}/items/import`, { items, mode: 'update_existing' }),
+    onSuccess: () => invalidate(),
+  });
+
   if (detail.isLoading) return <div className="shell"><p className="muted">Loading…</p></div>;
   if (detail.isError) return <div className="shell"><p className="error">{String(detail.error.message || detail.error)}</p></div>;
 
@@ -90,12 +104,15 @@ export default function BucketDetail() {
 
       <div className="row-between" style={{ marginTop: '1.5rem' }}>
         <h2>Items ({items.length})</h2>
-        <button
-          className="btn primary"
-          onClick={() => setAddingItem(true)}
-          disabled={availableProducts.length === 0}
-          title={availableProducts.length === 0 ? 'All active products are already in this bucket' : undefined}
-        >+ Add item</button>
+        <div className="row gap">
+          <button className="btn ghost" onClick={() => setImporting(true)}>Import CSV</button>
+          <button
+            className="btn primary"
+            onClick={() => setAddingItem(true)}
+            disabled={availableProducts.length === 0}
+            title={availableProducts.length === 0 ? 'All active products are already in this bucket' : undefined}
+          >+ Add item</button>
+        </div>
       </div>
 
       <div className="card no-pad">
@@ -190,6 +207,51 @@ export default function BucketDetail() {
           onSubmit={(data) => updateItem.mutate({ itemId: editingItem.id, data })}
           busy={updateItem.isPending}
           error={updateItem.error}
+        />
+      )}
+
+      {importing && (
+        <CsvImportModal
+          title="Import bucket items from CSV"
+          description="Each row is matched to a product by name (case-insensitive). Existing items on this bucket are updated with the new price; missing products are skipped and reported."
+          templateHeaders={BUCKET_ITEMS_CSV_HEADERS}
+          templateFilename={`${bucket.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-items.csv`}
+          parseRow={(r) => {
+            if (!r.product_name) throw new Error('product_name required');
+            const unit = Number(r.unit_price);
+            if (!Number.isFinite(unit) || unit < 0) throw new Error('unit_price must be a non-negative number');
+            const total = r.total_price === '' || r.total_price == null ? null : Number(r.total_price);
+            if (total !== null && (!Number.isFinite(total) || total < 0)) throw new Error('total_price must be a non-negative number');
+            return {
+              product_name: r.product_name,
+              unit_price: unit,
+              total_price: total,
+              notes: r.notes || null,
+            };
+          }}
+          previewColumns={[
+            { key: 'product_name', label: 'Product' },
+            { key: 'unit_price', label: 'Unit price' },
+            { key: 'total_price', label: 'Total' },
+            { key: 'notes', label: 'Notes' },
+          ]}
+          onCancel={() => { setImporting(false); importItems.reset(); }}
+          onSubmit={(rows) => importItems.mutate(rows)}
+          busy={importItems.isPending}
+          error={importItems.error}
+          result={importItems.data}
+          renderResult={(r) => (
+            <div>
+              <p className="muted">
+                ✓ Created {r.created.length}, updated {r.updated.length}, skipped {r.skipped.length}.
+              </p>
+              {r.unmatched && r.unmatched.length > 0 && (
+                <p className="error">
+                  Unmatched products (no entry in catalog): {r.unmatched.join(', ')}
+                </p>
+              )}
+            </div>
+          )}
         />
       )}
     </div>

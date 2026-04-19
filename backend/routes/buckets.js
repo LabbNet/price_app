@@ -236,4 +236,84 @@ router.delete('/:id/items/:itemId', requireStaff, async (req, res) => {
   res.json({ ok: true });
 });
 
+/**
+ * Bulk import bucket items from a CSV-style payload. Each row identifies a
+ * product by product_name (case-insensitive match against active products).
+ * Existing items are updated with the new price; new items are inserted.
+ * Rows whose product_name doesn't match any product are reported as errors.
+ */
+router.post('/:id/items/import', requireStaff, async (req, res) => {
+  const importItemSchema = z.object({
+    product_name: z.string().min(1),
+    unit_price: z.coerce.number().min(0),
+    total_price: z.coerce.number().min(0).nullable().optional(),
+    notes: z.string().nullable().optional(),
+  });
+  const importSchema = z.object({
+    items: z.array(importItemSchema).min(1).max(5000),
+    mode: z.enum(['skip_existing', 'update_existing']).optional().default('update_existing'),
+  });
+  const parsed = importSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
+
+  const bucket = await db('pricing_buckets').where({ id: req.params.id }).first();
+  if (!bucket) return res.status(404).json({ error: 'bucket_not_found' });
+
+  const names = parsed.data.items.map((i) => i.product_name.toLowerCase());
+  const products = await db('products')
+    .whereRaw('LOWER(name) = ANY(?)', [names])
+    .select('id', 'name');
+  const productByLowerName = new Map(products.map((p) => [p.name.toLowerCase(), p]));
+
+  const existing = await db('bucket_items').where({ bucket_id: req.params.id }).select('id', 'product_id');
+  const existingByProduct = new Map(existing.map((e) => [e.product_id, e]));
+
+  const created = [];
+  const updated = [];
+  const skipped = [];
+  const unmatched = [];
+
+  await db.transaction(async (trx) => {
+    for (const item of parsed.data.items) {
+      const product = productByLowerName.get(item.product_name.toLowerCase());
+      if (!product) {
+        unmatched.push(item.product_name);
+        continue;
+      }
+      const existingItem = existingByProduct.get(product.id);
+      const payload = {
+        unit_price: item.unit_price,
+        total_price: item.total_price ?? null,
+        notes: item.notes || null,
+      };
+      if (existingItem) {
+        if (parsed.data.mode === 'update_existing') {
+          const [row] = await trx('bucket_items')
+            .where({ id: existingItem.id })
+            .update({ ...payload, updated_at: trx.fn.now() })
+            .returning(['id', 'product_id']);
+          updated.push(row);
+        } else {
+          skipped.push({ product_name: product.name });
+        }
+      } else {
+        const [row] = await trx('bucket_items')
+          .insert({ bucket_id: req.params.id, product_id: product.id, ...payload })
+          .returning(['id', 'product_id']);
+        created.push(row);
+      }
+    }
+  });
+
+  await audit({
+    req,
+    action: 'bucket_item.bulk_import',
+    entityType: 'pricing_bucket',
+    entityId: req.params.id,
+    notes: `created=${created.length} updated=${updated.length} skipped=${skipped.length} unmatched=${unmatched.length}`,
+    after: { created: created.length, updated: updated.length, skipped: skipped.length, unmatched },
+  });
+  res.status(201).json({ created, updated, skipped, unmatched });
+});
+
 module.exports = router;

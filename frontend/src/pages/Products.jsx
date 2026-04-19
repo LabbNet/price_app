@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '../api';
+import CsvImportModal from '../components/CsvImportModal';
 
 const emptyForm = {
   name: '',
@@ -11,10 +12,20 @@ const emptyForm = {
   notes: '',
 };
 
+const PRODUCT_CSV_HEADERS = [
+  { key: 'name', required: true },
+  { key: 'product_type' },
+  { key: 'unit_of_measure', hint: 'each, case, etc.' },
+  { key: 'labb_cost', required: true, hint: 'decimal, Labb cost per unit' },
+  { key: 'description' },
+  { key: 'notes' },
+];
+
 export default function Products() {
   const qc = useQueryClient();
   const [includeInactive, setIncludeInactive] = useState(false);
   const [editing, setEditing] = useState(null); // null | 'new' | product
+  const [importing, setImporting] = useState(false);
 
   const list = useQuery({
     queryKey: ['products', includeInactive],
@@ -32,6 +43,11 @@ export default function Products() {
     },
   });
 
+  const importCsv = useMutation({
+    mutationFn: (products) => apiPost('/api/products/import', { products, mode: 'update_existing' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+  });
+
   const toggle = useMutation({
     mutationFn: ({ id, active }) =>
       active ? apiPost(`/api/products/${id}/deactivate`) : apiPost(`/api/products/${id}/activate`),
@@ -47,6 +63,7 @@ export default function Products() {
             <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
             Show inactive
           </label>
+          <button className="btn ghost" onClick={() => setImporting(true)}>Import CSV</button>
           <button className="btn primary" onClick={() => setEditing('new')}>+ New product</button>
         </div>
       </div>
@@ -102,6 +119,44 @@ export default function Products() {
           onSubmit={(data) => save.mutate({ id: editing !== 'new' ? editing.id : undefined, data })}
           busy={save.isPending}
           error={save.error}
+        />
+      )}
+
+      {importing && (
+        <CsvImportModal
+          title="Import products from CSV"
+          description="New products are created. Existing products (matched by name, case-insensitive) have their cost and details updated."
+          templateHeaders={PRODUCT_CSV_HEADERS}
+          templateFilename="products-template.csv"
+          parseRow={(r) => {
+            if (!r.name) throw new Error('name required');
+            const cost = Number(r.labb_cost);
+            if (!Number.isFinite(cost) || cost < 0) throw new Error('labb_cost must be a non-negative number');
+            return {
+              name: r.name,
+              product_type: r.product_type || null,
+              unit_of_measure: r.unit_of_measure || null,
+              labb_cost: cost,
+              description: r.description || null,
+              notes: r.notes || null,
+            };
+          }}
+          previewColumns={[
+            { key: 'name', label: 'Name' },
+            { key: 'product_type', label: 'Type' },
+            { key: 'unit_of_measure', label: 'UoM' },
+            { key: 'labb_cost', label: 'Labb cost' },
+          ]}
+          onCancel={() => { setImporting(false); importCsv.reset(); }}
+          onSubmit={(rows) => importCsv.mutate(rows)}
+          busy={importCsv.isPending}
+          error={importCsv.error}
+          result={importCsv.data}
+          renderResult={(r) => (
+            <p className="muted">
+              ✓ Created {r.created.length}, updated {r.updated.length}, skipped {r.skipped.length}.
+            </p>
+          )}
         />
       )}
     </div>

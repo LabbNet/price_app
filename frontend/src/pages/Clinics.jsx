@@ -2,11 +2,27 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '../api';
+import CsvImportModal from '../components/CsvImportModal';
+
+const CLINIC_CSV_HEADERS = [
+  { key: 'name', required: true },
+  { key: 'legal_name' },
+  { key: 'ein' },
+  { key: 'primary_contact_name' },
+  { key: 'primary_contact_email' },
+  { key: 'primary_contact_phone' },
+  { key: 'address_line1' },
+  { key: 'city' },
+  { key: 'state' },
+  { key: 'postal_code' },
+  { key: 'notes' },
+];
 
 export default function Clinics() {
   const qc = useQueryClient();
   const [includeInactive, setIncludeInactive] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const list = useQuery({
     queryKey: ['clinics', includeInactive],
@@ -16,6 +32,11 @@ export default function Clinics() {
   const create = useMutation({
     mutationFn: (data) => apiPost('/api/clinics', data),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['clinics'] }); setCreating(false); },
+  });
+
+  const importCsv = useMutation({
+    mutationFn: (clinics) => apiPost('/api/clinics/import', { clinics }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['clinics'] }); },
   });
 
   const toggle = useMutation({
@@ -32,6 +53,7 @@ export default function Clinics() {
             <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
             Show inactive
           </label>
+          <button className="btn ghost" onClick={() => setImporting(true)}>Import CSV</button>
           <button className="btn primary" onClick={() => setCreating(true)}>+ New clinic</button>
         </div>
       </div>
@@ -93,6 +115,43 @@ export default function Clinics() {
           onSubmit={(data) => create.mutate(data)}
           busy={create.isPending}
           error={create.error}
+        />
+      )}
+
+      {importing && (
+        <CsvImportModal
+          title="Import clinics from CSV"
+          description="Create parent organizations in bulk. Duplicates are not checked — clinics with the same name are allowed."
+          templateHeaders={CLINIC_CSV_HEADERS}
+          templateFilename="clinics-template.csv"
+          parseRow={(r) => {
+            if (!r.name) throw new Error('name required');
+            return {
+              name: r.name,
+              legal_name: r.legal_name || null,
+              ein: r.ein || null,
+              primary_contact_name: r.primary_contact_name || null,
+              primary_contact_email: r.primary_contact_email || null,
+              primary_contact_phone: r.primary_contact_phone || null,
+              address_line1: r.address_line1 || null,
+              city: r.city || null,
+              state: r.state || null,
+              postal_code: r.postal_code || null,
+              notes: r.notes || null,
+            };
+          }}
+          previewColumns={[
+            { key: 'name', label: 'Name' },
+            { key: 'city', label: 'City' },
+            { key: 'state', label: 'State' },
+            { key: 'primary_contact_email', label: 'Email' },
+          ]}
+          onCancel={() => { setImporting(false); importCsv.reset(); }}
+          onSubmit={(rows) => importCsv.mutate(rows)}
+          busy={importCsv.isPending}
+          error={importCsv.error}
+          result={importCsv.data}
+          renderResult={(r) => <p className="muted">✓ Imported {r.imported} clinic(s).</p>}
         />
       )}
     </div>

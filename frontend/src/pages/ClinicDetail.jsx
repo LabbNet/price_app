@@ -4,7 +4,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '../api';
 import { ClinicForm } from './Clinics';
 import { ClientForm } from './Clients';
-import { parseCsvToObjects } from '../lib/csv';
+import CsvImportModal from '../components/CsvImportModal';
+
+const CLIENT_CSV_HEADERS = [
+  { key: 'name', required: true },
+  { key: 'legal_name' },
+  { key: 'ein' },
+  { key: 'contact_name' },
+  { key: 'contact_email' },
+  { key: 'contact_phone' },
+  { key: 'address_line1' },
+  { key: 'city' },
+  { key: 'state' },
+  { key: 'postal_code' },
+  { key: 'notes' },
+];
 
 const PAGE = 50;
 
@@ -197,12 +211,40 @@ export default function ClinicDetail() {
         />
       )}
       {importing && (
-        <ImportCsv
-          onCancel={() => setImporting(false)}
+        <CsvImportModal
+          title="Import clients from CSV"
+          description={`Create clients in bulk under ${c.name}. Each row becomes a new client; duplicates are not checked.`}
+          templateHeaders={CLIENT_CSV_HEADERS}
+          templateFilename="clients-template.csv"
+          parseRow={(r) => {
+            if (!r.name) throw new Error('name required');
+            return {
+              name: r.name,
+              legal_name: r.legal_name || null,
+              ein: r.ein || null,
+              contact_name: r.contact_name || null,
+              contact_email: r.contact_email || null,
+              contact_phone: r.contact_phone || null,
+              address_line1: r.address_line1 || r.address || null,
+              address_line2: r.address_line2 || null,
+              city: r.city || null,
+              state: r.state || null,
+              postal_code: r.postal_code || r.zip || null,
+              notes: r.notes || null,
+            };
+          }}
+          previewColumns={[
+            { key: 'name', label: 'Name' },
+            { key: 'city', label: 'City' },
+            { key: 'state', label: 'State' },
+            { key: 'contact_email', label: 'Email' },
+          ]}
+          onCancel={() => { setImporting(false); bulkImport.reset(); }}
           onSubmit={(rows) => bulkImport.mutate(rows)}
           busy={bulkImport.isPending}
           error={bulkImport.error}
           result={bulkImport.data}
+          renderResult={(r) => <p className="muted">✓ Imported {r.imported} client(s).</p>}
         />
       )}
       {bulkAssigning && (
@@ -226,95 +268,6 @@ function Field({ label, value }) {
     <div style={{ minWidth: 160 }}>
       <div className="muted small" style={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: '0.72rem' }}>{label}</div>
       <div>{value || <span className="muted">—</span>}</div>
-    </div>
-  );
-}
-
-function ImportCsv({ onSubmit, onCancel, busy, error, result }) {
-  const [text, setText] = useState('');
-  const [preview, setPreview] = useState(null);
-
-  const onFile = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const r = new FileReader();
-    r.onload = () => setText(String(r.result || ''));
-    r.readAsText(file);
-  };
-
-  const parse = () => {
-    const rows = parseCsvToObjects(text).map((r) => ({
-      name: r.name || '',
-      legal_name: r.legal_name || null,
-      ein: r.ein || null,
-      contact_name: r.contact_name || null,
-      contact_email: r.contact_email || null,
-      contact_phone: r.contact_phone || null,
-      address_line1: r.address_line1 || r.address || null,
-      address_line2: r.address_line2 || null,
-      city: r.city || null,
-      state: r.state || null,
-      postal_code: r.postal_code || r.zip || null,
-      notes: r.notes || null,
-    }));
-    setPreview(rows);
-  };
-
-  const submit = () => {
-    if (!preview) return;
-    const valid = preview.filter((r) => r.name);
-    onSubmit(valid);
-  };
-
-  return (
-    <div className="modal" role="dialog">
-      <div className="card modal-card" style={{ maxWidth: 780 }}>
-        <h2>Import clients from CSV</h2>
-        <p className="muted">
-          Expected headers (case-insensitive): <code>name</code> (required), <code>legal_name</code>, <code>ein</code>,{' '}
-          <code>contact_name</code>, <code>contact_email</code>, <code>contact_phone</code>,{' '}
-          <code>address_line1</code>, <code>city</code>, <code>state</code>, <code>postal_code</code>, <code>notes</code>.
-        </p>
-        <label className="field"><span>Choose file</span>
-          <input type="file" accept=".csv,text/csv" onChange={onFile} />
-        </label>
-        <label className="field"><span>…or paste CSV</span>
-          <textarea rows={6} value={text} onChange={(e) => setText(e.target.value)} placeholder="name,city,state..." />
-        </label>
-        <div className="row gap">
-          <button type="button" className="btn ghost" onClick={parse} disabled={!text}>Parse</button>
-          {preview && <span className="muted small">Parsed {preview.length} row(s), {preview.filter((r) => r.name).length} valid (have a name).</span>}
-        </div>
-        {preview && preview.length > 0 && (
-          <div className="card no-pad" style={{ maxHeight: 240, overflow: 'auto' }}>
-            <table className="tbl">
-              <thead><tr><th>Name</th><th>City</th><th>State</th><th>Email</th></tr></thead>
-              <tbody>
-                {preview.slice(0, 25).map((r, i) => (
-                  <tr key={i}>
-                    <td>{r.name || <span className="error">missing</span>}</td>
-                    <td>{r.city || <span className="muted">—</span>}</td>
-                    <td>{r.state || <span className="muted">—</span>}</td>
-                    <td className="small">{r.contact_email || <span className="muted">—</span>}</td>
-                  </tr>
-                ))}
-                {preview.length > 25 && <tr><td colSpan={4} className="muted center">…and {preview.length - 25} more</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {error && <p className="error">{String(error.message || error)}</p>}
-        {result && <p className="muted">✓ Imported {result.imported} client(s).</p>}
-        <div className="row gap end">
-          <button type="button" className="btn ghost" onClick={onCancel}>Close</button>
-          <button
-            type="button"
-            className="btn primary"
-            disabled={!preview || preview.filter((r) => r.name).length === 0 || busy}
-            onClick={submit}
-          >{busy ? 'Importing…' : `Import ${preview ? preview.filter((r) => r.name).length : 0}`}</button>
-        </div>
-      </div>
     </div>
   );
 }

@@ -85,4 +85,56 @@ router.post('/:id/activate', requireStaff, async (req, res) => {
   res.json({ product: row });
 });
 
+/**
+ * Bulk import. By default, duplicates (same name, case-insensitive) are
+ * skipped. Pass { mode: 'update' } to update labb_cost + other fields on
+ * existing products by name instead of skipping.
+ */
+router.post('/import', requireStaff, async (req, res) => {
+  const importSchema = z.object({
+    products: z.array(productSchema).min(1).max(5000),
+    mode: z.enum(['skip_existing', 'update_existing']).optional().default('skip_existing'),
+  });
+  const parsed = importSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
+
+  const { products, mode } = parsed.data;
+  const names = products.map((p) => p.name.toLowerCase());
+  const existing = await db('products').whereRaw('LOWER(name) = ANY(?)', [names]).select('id', 'name');
+  const existingByLowerName = new Map(existing.map((e) => [e.name.toLowerCase(), e]));
+
+  const created = [];
+  const updated = [];
+  const skipped = [];
+
+  await db.transaction(async (trx) => {
+    for (const p of products) {
+      const match = existingByLowerName.get(p.name.toLowerCase());
+      if (match) {
+        if (mode === 'update_existing') {
+          const [row] = await trx('products')
+            .where({ id: match.id })
+            .update({ ...p, updated_at: trx.fn.now() })
+            .returning(['id', 'name']);
+          updated.push(row);
+        } else {
+          skipped.push({ name: p.name, existing_id: match.id });
+        }
+      } else {
+        const [row] = await trx('products').insert(p).returning(['id', 'name']);
+        created.push(row);
+      }
+    }
+  });
+
+  await audit({
+    req,
+    action: 'product.bulk_import',
+    entityType: 'product',
+    notes: `created=${created.length} updated=${updated.length} skipped=${skipped.length} mode=${mode}`,
+    after: { created: created.length, updated: updated.length, skipped: skipped.length },
+  });
+  res.status(201).json({ created, updated, skipped });
+});
+
 module.exports = router;
