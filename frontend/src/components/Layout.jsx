@@ -16,6 +16,8 @@ export default function Layout() {
             {isStaff(user) && <NavLink to="/clients">Clients</NavLink>}
             {isStaff(user) && <NavLink to="/clinics">Clinics</NavLink>}
             {isStaff(user) && <NavLink to="/special-pricing">Special pricing</NavLink>}
+            {isStaff(user) && <NavLink to="/contracts">Contracts</NavLink>}
+            {isStaff(user) && <NavLink to="/contract-templates">Templates</NavLink>}
           </div>
           <div className="nav-right">
             <span className="muted">{user?.email} · {user?.role}</span>

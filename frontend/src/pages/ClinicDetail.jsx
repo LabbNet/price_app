@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch } from '../api';
 import { ClinicForm } from './Clinics';
 import SpecialPricingForm from '../components/SpecialPricingForm';
+import { NewContractForm } from './Contracts';
 
 const CONDITION_LABEL = {
   time_limited: 'Time-limited',
@@ -14,10 +15,18 @@ const CONDITION_LABEL = {
 export default function ClinicDetail() {
   const { id } = useParams();
   const qc = useQueryClient();
+  const nav = useNavigate();
   const [editing, setEditing] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [addingSpecial, setAddingSpecial] = useState(false);
   const [editingSpecial, setEditingSpecial] = useState(null);
+  const [creatingContract, setCreatingContract] = useState(false);
+
+  const contractsQ = useQuery({ queryKey: ['contracts', { clinic: id }], queryFn: () => apiGet(`/api/contracts?clinic_id=${id}`) });
+  const createContract = useMutation({
+    mutationFn: (data) => apiPost('/api/contracts', data),
+    onSuccess: (r) => { setCreatingContract(false); nav(`/contracts/${r.contract.id}`); },
+  });
 
   const detail = useQuery({ queryKey: ['clinic', id], queryFn: () => apiGet(`/api/clinics/${id}`) });
   const buckets = useQuery({ queryKey: ['buckets', false], queryFn: () => apiGet('/api/buckets') });
@@ -238,6 +247,39 @@ export default function ClinicDetail() {
         </table>
       </div>
 
+      <div className="row-between" style={{ marginTop: '1.5rem' }}>
+        <h2>Contracts</h2>
+        <button className="btn primary" onClick={() => setCreatingContract(true)}>+ New contract</button>
+      </div>
+      <div className="card no-pad">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Template</th>
+              <th>Status</th>
+              <th>Sent</th>
+              <th>Signed</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {contractsQ.isLoading && <tr><td colSpan={5} className="muted center">Loading…</td></tr>}
+            {contractsQ.data && contractsQ.data.contracts.length === 0 && (
+              <tr><td colSpan={5} className="muted center">No contracts yet.</td></tr>
+            )}
+            {contractsQ.data && contractsQ.data.contracts.map((c) => (
+              <tr key={c.id}>
+                <td><Link to={`/contracts/${c.id}`}>{c.template_name || '—'}</Link> <span className="muted small">v{c.template_version}</span></td>
+                <td><span className={`badge ${c.status === 'active' ? 'ok' : c.status === 'terminated' ? 'err' : ''}`}>{c.status}</span></td>
+                <td className="small">{c.sent_at ? new Date(c.sent_at).toLocaleDateString() : <span className="muted">—</span>}</td>
+                <td className="small">{c.counter_signed_at ? new Date(c.counter_signed_at).toLocaleDateString() : c.signed_by_client_at ? new Date(c.signed_by_client_at).toLocaleDateString() + ' (client)' : <span className="muted">—</span>}</td>
+                <td className="right"><Link className="btn ghost" to={`/contracts/${c.id}`}>Open</Link></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
       {assignment_history.length > 0 && (
         <>
           <h2 style={{ marginTop: '1.5rem' }}>Bucket assignment history</h2>
@@ -305,6 +347,15 @@ export default function ClinicDetail() {
           onSubmit={(data) => updateSpecial.mutate({ spId: editingSpecial.id, data })}
           busy={updateSpecial.isPending}
           error={updateSpecial.error}
+        />
+      )}
+      {creatingContract && (
+        <NewContractForm
+          initial={{ clinic_id: clinic.id, clinic_name: clinic.name, client_id: clinic.client_id }}
+          onCancel={() => setCreatingContract(false)}
+          onSubmit={(data) => createContract.mutate(data)}
+          busy={createContract.isPending}
+          error={createContract.error}
         />
       )}
     </div>

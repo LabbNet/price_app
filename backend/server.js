@@ -12,6 +12,8 @@ const buckets = require('./routes/buckets');
 const clients = require('./routes/clients');
 const clinics = require('./routes/clinics');
 const specialPricing = require('./routes/specialPricing');
+const contractTemplates = require('./routes/contractTemplates');
+const contracts = require('./routes/contracts');
 
 const app = express();
 
@@ -29,9 +31,10 @@ app.use('/api/buckets', buckets);
 app.use('/api/clients', clients);
 app.use('/api/clinics', clinics);
 app.use('/api/special-pricing', specialPricing);
+app.use('/api/contract-templates', contractTemplates);
+app.use('/api/contracts', contracts);
 
 // Feature route stubs — filled in subsequent commits.
-app.use('/api/contracts', (req, res) => res.status(501).json({ error: 'not_implemented' }));
 app.use('/api/users', (req, res) => res.status(501).json({ error: 'not_implemented' }));
 app.use('/api/audit', (req, res) => res.status(501).json({ error: 'not_implemented' }));
 
