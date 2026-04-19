@@ -132,16 +132,52 @@ router.post('/:id/assign-bucket-to-all', requireStaff, async (req, res) => {
   res.json(result);
 });
 
-// Bulk import — accepts an array of clinic rows. All-or-nothing transaction.
+// Bulk import — permissive. All fields optional; empty strings become null.
+// Missing/blank name defaults to "(unnamed)" so the row can still land.
 router.post('/import', requireStaff, async (req, res) => {
+  const importRowSchema = z
+    .object({
+      name: z.string().optional(),
+      legal_name: z.string().nullable().optional(),
+      ein: z.string().nullable().optional(),
+      primary_contact_name: z.string().nullable().optional(),
+      primary_contact_email: z.string().nullable().optional(),
+      primary_contact_phone: z.string().nullable().optional(),
+      address_line1: z.string().nullable().optional(),
+      address_line2: z.string().nullable().optional(),
+      city: z.string().nullable().optional(),
+      state: z.string().nullable().optional(),
+      postal_code: z.string().nullable().optional(),
+      country: z.string().nullable().optional(),
+      notes: z.string().nullable().optional(),
+    })
+    .passthrough();
+
   const importSchema = z.object({
-    clinics: z.array(clinicSchema).min(1).max(5000),
+    clinics: z.array(importRowSchema).min(1).max(5000),
   });
   const parsed = importSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
 
+  const normalize = (v) => (v === '' || v == null ? null : v);
+  const rows = parsed.data.clinics.map((r) => ({
+    name: (r.name && r.name.trim()) || '(unnamed)',
+    legal_name: normalize(r.legal_name),
+    ein: normalize(r.ein),
+    primary_contact_name: normalize(r.primary_contact_name),
+    primary_contact_email: normalize(r.primary_contact_email),
+    primary_contact_phone: normalize(r.primary_contact_phone),
+    address_line1: normalize(r.address_line1),
+    address_line2: normalize(r.address_line2),
+    city: normalize(r.city),
+    state: normalize(r.state),
+    postal_code: normalize(r.postal_code),
+    country: normalize(r.country),
+    notes: normalize(r.notes),
+  }));
+
   const inserted = await db.transaction(async (trx) => {
-    return trx('clinics').insert(parsed.data.clinics).returning(['id', 'name']);
+    return trx('clinics').insert(rows).returning(['id', 'name']);
   });
 
   await audit({

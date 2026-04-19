@@ -128,19 +128,14 @@ export default function Products() {
           description="New products are created. Existing products (matched by name, case-insensitive) have their cost and details updated."
           templateHeaders={PRODUCT_CSV_HEADERS}
           templateFilename="products-template.csv"
-          parseRow={(r) => {
-            if (!r.name) throw new Error('name required');
-            const cost = Number(r.labb_cost);
-            if (!Number.isFinite(cost) || cost < 0) throw new Error('labb_cost must be a non-negative number');
-            return {
-              name: r.name,
-              product_type: r.product_type || null,
-              unit_of_measure: r.unit_of_measure || null,
-              labb_cost: cost,
-              description: r.description || null,
-              notes: r.notes || null,
-            };
-          }}
+          parseRow={(r) => ({
+            name: r.name || '',
+            product_type: r.product_type || null,
+            unit_of_measure: r.unit_of_measure || null,
+            labb_cost: r.labb_cost ?? '',
+            description: r.description || null,
+            notes: r.notes || null,
+          })}
           previewColumns={[
             { key: 'name', label: 'Name' },
             { key: 'product_type', label: 'Type' },

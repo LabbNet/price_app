@@ -216,23 +216,20 @@ export default function ClinicDetail() {
           description={`Create clients in bulk under ${c.name}. Each row becomes a new client; duplicates are not checked.`}
           templateHeaders={CLIENT_CSV_HEADERS}
           templateFilename="clients-template.csv"
-          parseRow={(r) => {
-            if (!r.name) throw new Error('name required');
-            return {
-              name: r.name,
-              legal_name: r.legal_name || null,
-              ein: r.ein || null,
-              contact_name: r.contact_name || null,
-              contact_email: r.contact_email || null,
-              contact_phone: r.contact_phone || null,
-              address_line1: r.address_line1 || r.address || null,
-              address_line2: r.address_line2 || null,
-              city: r.city || null,
-              state: r.state || null,
-              postal_code: r.postal_code || r.zip || null,
-              notes: r.notes || null,
-            };
-          }}
+          parseRow={(r) => ({
+            name: r.name || '',
+            legal_name: r.legal_name || null,
+            ein: r.ein || null,
+            contact_name: r.contact_name || null,
+            contact_email: r.contact_email || null,
+            contact_phone: r.contact_phone || null,
+            address_line1: r.address_line1 || r.address || null,
+            address_line2: r.address_line2 || null,
+            city: r.city || null,
+            state: r.state || null,
+            postal_code: r.postal_code || r.zip || null,
+            notes: r.notes || null,
+          })}
           previewColumns={[
             { key: 'name', label: 'Name' },
             { key: 'city', label: 'City' },

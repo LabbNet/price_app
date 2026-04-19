@@ -243,12 +243,14 @@ router.delete('/:id/items/:itemId', requireStaff, async (req, res) => {
  * Rows whose product_name doesn't match any product are reported as errors.
  */
 router.post('/:id/items/import', requireStaff, async (req, res) => {
-  const importItemSchema = z.object({
-    product_name: z.string().min(1),
-    unit_price: z.coerce.number().min(0),
-    total_price: z.coerce.number().min(0).nullable().optional(),
-    notes: z.string().nullable().optional(),
-  });
+  const importItemSchema = z
+    .object({
+      product_name: z.string().optional(),
+      unit_price: z.any().optional(),
+      total_price: z.any().optional(),
+      notes: z.string().nullable().optional(),
+    })
+    .passthrough();
   const importSchema = z.object({
     items: z.array(importItemSchema).min(1).max(5000),
     mode: z.enum(['skip_existing', 'update_existing']).optional().default('update_existing'),
@@ -259,10 +261,25 @@ router.post('/:id/items/import', requireStaff, async (req, res) => {
   const bucket = await db('pricing_buckets').where({ id: req.params.id }).first();
   if (!bucket) return res.status(404).json({ error: 'bucket_not_found' });
 
-  const names = parsed.data.items.map((i) => i.product_name.toLowerCase());
-  const products = await db('products')
-    .whereRaw('LOWER(name) = ANY(?)', [names])
-    .select('id', 'name');
+  const toNum = (v) => {
+    if (v == null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+
+  // Rows without a product name can't be matched; rows without a valid
+  // unit price can't produce a bucket item. Both buckets get surfaced.
+  const prepared = parsed.data.items.map((item) => ({
+    product_name: (item.product_name || '').trim(),
+    unit_price: toNum(item.unit_price),
+    total_price: toNum(item.total_price),
+    notes: item.notes || null,
+  }));
+
+  const names = prepared.filter((p) => p.product_name).map((p) => p.product_name.toLowerCase());
+  const products = names.length === 0
+    ? []
+    : await db('products').whereRaw('LOWER(name) = ANY(?)', [names]).select('id', 'name');
   const productByLowerName = new Map(products.map((p) => [p.name.toLowerCase(), p]));
 
   const existing = await db('bucket_items').where({ bucket_id: req.params.id }).select('id', 'product_id');
@@ -274,17 +291,25 @@ router.post('/:id/items/import', requireStaff, async (req, res) => {
   const unmatched = [];
 
   await db.transaction(async (trx) => {
-    for (const item of parsed.data.items) {
+    for (const item of prepared) {
+      if (!item.product_name) {
+        unmatched.push('(empty)');
+        continue;
+      }
       const product = productByLowerName.get(item.product_name.toLowerCase());
       if (!product) {
         unmatched.push(item.product_name);
         continue;
       }
+      if (item.unit_price == null) {
+        skipped.push({ product_name: product.name, reason: 'missing_unit_price' });
+        continue;
+      }
       const existingItem = existingByProduct.get(product.id);
       const payload = {
         unit_price: item.unit_price,
-        total_price: item.total_price ?? null,
-        notes: item.notes || null,
+        total_price: item.total_price,
+        notes: item.notes,
       };
       if (existingItem) {
         if (parsed.data.mode === 'update_existing') {

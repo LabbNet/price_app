@@ -124,22 +124,19 @@ export default function Clinics() {
           description="Create parent organizations in bulk. Duplicates are not checked — clinics with the same name are allowed."
           templateHeaders={CLINIC_CSV_HEADERS}
           templateFilename="clinics-template.csv"
-          parseRow={(r) => {
-            if (!r.name) throw new Error('name required');
-            return {
-              name: r.name,
-              legal_name: r.legal_name || null,
-              ein: r.ein || null,
-              primary_contact_name: r.primary_contact_name || null,
-              primary_contact_email: r.primary_contact_email || null,
-              primary_contact_phone: r.primary_contact_phone || null,
-              address_line1: r.address_line1 || null,
-              city: r.city || null,
-              state: r.state || null,
-              postal_code: r.postal_code || null,
-              notes: r.notes || null,
-            };
-          }}
+          parseRow={(r) => ({
+            name: r.name || '',
+            legal_name: r.legal_name || null,
+            ein: r.ein || null,
+            primary_contact_name: r.primary_contact_name || null,
+            primary_contact_email: r.primary_contact_email || null,
+            primary_contact_phone: r.primary_contact_phone || null,
+            address_line1: r.address_line1 || null,
+            city: r.city || null,
+            state: r.state || null,
+            postal_code: r.postal_code || null,
+            notes: r.notes || null,
+          })}
           previewColumns={[
             { key: 'name', label: 'Name' },
             { key: 'city', label: 'City' },

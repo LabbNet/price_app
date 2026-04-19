@@ -216,19 +216,12 @@ export default function BucketDetail() {
           description="Each row is matched to a product by name (case-insensitive). Existing items on this bucket are updated with the new price; missing products are skipped and reported."
           templateHeaders={BUCKET_ITEMS_CSV_HEADERS}
           templateFilename={`${bucket.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-items.csv`}
-          parseRow={(r) => {
-            if (!r.product_name) throw new Error('product_name required');
-            const unit = Number(r.unit_price);
-            if (!Number.isFinite(unit) || unit < 0) throw new Error('unit_price must be a non-negative number');
-            const total = r.total_price === '' || r.total_price == null ? null : Number(r.total_price);
-            if (total !== null && (!Number.isFinite(total) || total < 0)) throw new Error('total_price must be a non-negative number');
-            return {
-              product_name: r.product_name,
-              unit_price: unit,
-              total_price: total,
-              notes: r.notes || null,
-            };
-          }}
+          parseRow={(r) => ({
+            product_name: r.product_name || '',
+            unit_price: r.unit_price ?? '',
+            total_price: r.total_price ?? '',
+            notes: r.notes || null,
+          })}
           previewColumns={[
             { key: 'product_name', label: 'Product' },
             { key: 'unit_price', label: 'Unit price' },

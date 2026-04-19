@@ -86,19 +86,48 @@ router.post('/:id/activate', requireStaff, async (req, res) => {
 });
 
 /**
- * Bulk import. By default, duplicates (same name, case-insensitive) are
- * skipped. Pass { mode: 'update' } to update labb_cost + other fields on
- * existing products by name instead of skipping.
+ * Bulk import — permissive. All fields optional; missing name defaults to
+ * "(unnamed)", missing labb_cost defaults to 0. Non-numeric labb_cost is
+ * coerced to 0 instead of rejecting the payload.
+ *
+ * Duplicates are matched by name (case-insensitive). Pass
+ * mode=update_existing to overwrite, else skip.
  */
 router.post('/import', requireStaff, async (req, res) => {
+  const importRowSchema = z
+    .object({
+      name: z.string().optional(),
+      product_type: z.string().nullable().optional(),
+      unit_of_measure: z.string().nullable().optional(),
+      labb_cost: z.any().optional(),
+      description: z.string().nullable().optional(),
+      notes: z.string().nullable().optional(),
+    })
+    .passthrough();
+
   const importSchema = z.object({
-    products: z.array(productSchema).min(1).max(5000),
+    products: z.array(importRowSchema).min(1).max(5000),
     mode: z.enum(['skip_existing', 'update_existing']).optional().default('skip_existing'),
   });
   const parsed = importSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
 
-  const { products, mode } = parsed.data;
+  const normalize = (v) => (v === '' || v == null ? null : v);
+  const toCost = (v) => {
+    if (v == null || v === '') return 0;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  };
+  const products = parsed.data.products.map((r) => ({
+    name: (r.name && String(r.name).trim()) || '(unnamed)',
+    product_type: normalize(r.product_type),
+    unit_of_measure: normalize(r.unit_of_measure),
+    labb_cost: toCost(r.labb_cost),
+    description: normalize(r.description),
+    notes: normalize(r.notes),
+  }));
+  const mode = parsed.data.mode;
+
   const names = products.map((p) => p.name.toLowerCase());
   const existing = await db('products').whereRaw('LOWER(name) = ANY(?)', [names]).select('id', 'name');
   const existingByLowerName = new Map(existing.map((e) => [e.name.toLowerCase(), e]));

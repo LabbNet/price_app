@@ -213,11 +213,29 @@ router.post('/:id/unassign-bucket', requireStaff, async (req, res) => {
   res.json({ unassigned: n });
 });
 
-// Bulk import — accepts an array of client rows. All-or-nothing transaction.
+// Bulk import — permissive. All fields optional; blank name becomes "(unnamed)".
 router.post('/import', requireStaff, async (req, res) => {
+  const importRowSchema = z
+    .object({
+      name: z.string().optional(),
+      legal_name: z.string().nullable().optional(),
+      ein: z.string().nullable().optional(),
+      contact_name: z.string().nullable().optional(),
+      contact_email: z.string().nullable().optional(),
+      contact_phone: z.string().nullable().optional(),
+      address_line1: z.string().nullable().optional(),
+      address_line2: z.string().nullable().optional(),
+      city: z.string().nullable().optional(),
+      state: z.string().nullable().optional(),
+      postal_code: z.string().nullable().optional(),
+      country: z.string().nullable().optional(),
+      notes: z.string().nullable().optional(),
+    })
+    .passthrough();
+
   const importSchema = z.object({
     clinic_id: z.string().uuid(),
-    clients: z.array(clientSchema.omit({ clinic_id: true })).min(1).max(5000),
+    clients: z.array(importRowSchema).min(1).max(5000),
   });
   const parsed = importSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
@@ -225,7 +243,23 @@ router.post('/import', requireStaff, async (req, res) => {
   const clinic = await db('clinics').where({ id: parsed.data.clinic_id }).first();
   if (!clinic) return res.status(400).json({ error: 'clinic_not_found' });
 
-  const rows = parsed.data.clients.map((c) => ({ ...c, clinic_id: clinic.id }));
+  const normalize = (v) => (v === '' || v == null ? null : v);
+  const rows = parsed.data.clients.map((c) => ({
+    clinic_id: clinic.id,
+    name: (c.name && c.name.trim()) || '(unnamed)',
+    legal_name: normalize(c.legal_name),
+    ein: normalize(c.ein),
+    contact_name: normalize(c.contact_name),
+    contact_email: normalize(c.contact_email),
+    contact_phone: normalize(c.contact_phone),
+    address_line1: normalize(c.address_line1),
+    address_line2: normalize(c.address_line2),
+    city: normalize(c.city),
+    state: normalize(c.state),
+    postal_code: normalize(c.postal_code),
+    country: normalize(c.country),
+    notes: normalize(c.notes),
+  }));
   const inserted = await db.transaction(async (trx) => {
     return trx('clients').insert(rows).returning(['id', 'name']);
   });
