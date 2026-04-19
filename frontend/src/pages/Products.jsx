@@ -8,9 +8,11 @@ const emptyForm = {
   sku: '',
   product_type: '',
   unit_of_measure: '',
+  raw_cost: '',
+  tariff: '',
   labb_cost: '',
   msrp: '',
-  description: '',
+  drugs_and_levels: '',
   notes: '',
 };
 
@@ -19,9 +21,11 @@ const PRODUCT_CSV_HEADERS = [
   { key: 'sku', hint: 'optional identifier' },
   { key: 'product_type' },
   { key: 'unit_of_measure', hint: 'each, case, etc.' },
-  { key: 'labb_cost', hint: 'decimal, Labb cost per unit' },
+  { key: 'raw_cost', hint: 'decimal, raw cost' },
+  { key: 'tariff', hint: 'decimal, tariff amount' },
+  { key: 'labb_cost', hint: 'decimal, total Labb cost per unit' },
   { key: 'msrp', hint: 'decimal, suggested retail' },
-  { key: 'description' },
+  { key: 'drugs_and_levels', hint: 'drugs tested + cutoffs' },
   { key: 'notes' },
 ];
 
@@ -84,6 +88,8 @@ export default function Products() {
                 <th>SKU</th>
                 <th>Type</th>
                 <th>UoM</th>
+                <th className="num">Raw</th>
+                <th className="num">Tariff</th>
                 <th className="num">Labb cost</th>
                 <th className="num">MSRP</th>
                 <th>Status</th>
@@ -92,14 +98,19 @@ export default function Products() {
             </thead>
             <tbody>
               {list.data.products.length === 0 && (
-                <tr><td colSpan={8} className="muted center">No products yet.</td></tr>
+                <tr><td colSpan={10} className="muted center">No products yet.</td></tr>
               )}
               {list.data.products.map((p) => (
                 <tr key={p.id} className={p.is_active ? '' : 'dim'}>
-                  <td><strong>{p.name}</strong>{p.description && <div className="muted small">{p.description}</div>}</td>
+                  <td>
+                    <strong>{p.name}</strong>
+                    {p.drugs_and_levels && <div className="muted small">{p.drugs_and_levels}</div>}
+                  </td>
                   <td className="small"><code>{p.sku || <span className="muted">—</span>}</code></td>
                   <td>{p.product_type || <span className="muted">—</span>}</td>
                   <td>{p.unit_of_measure || <span className="muted">—</span>}</td>
+                  <td className="num muted">{p.raw_cost != null ? `$${Number(p.raw_cost).toFixed(4)}` : '—'}</td>
+                  <td className="num muted">{p.tariff != null ? `$${Number(p.tariff).toFixed(4)}` : '—'}</td>
                   <td className="num">${Number(p.labb_cost).toFixed(4)}</td>
                   <td className="num">{p.msrp != null ? `$${Number(p.msrp).toFixed(4)}` : <span className="muted">—</span>}</td>
                   <td>
@@ -141,17 +152,19 @@ export default function Products() {
             sku: r.sku || null,
             product_type: r.product_type || null,
             unit_of_measure: r.unit_of_measure || null,
+            raw_cost: r.raw_cost ?? '',
+            tariff: r.tariff ?? '',
             labb_cost: r.labb_cost ?? '',
             msrp: r.msrp ?? '',
-            description: r.description || null,
+            drugs_and_levels: r.drugs_and_levels || r.description || null,
             notes: r.notes || null,
           })}
           previewColumns={[
             { key: 'name', label: 'Name' },
             { key: 'sku', label: 'SKU' },
-            { key: 'unit_of_measure', label: 'UoM' },
             { key: 'labb_cost', label: 'Labb cost' },
             { key: 'msrp', label: 'MSRP' },
+            { key: 'drugs_and_levels', label: 'Drugs & levels' },
           ]}
           onCancel={() => { setImporting(false); importCsv.reset(); }}
           onSubmit={(rows) => importCsv.mutate(rows)}
@@ -175,12 +188,15 @@ function ProductForm({ initial, onSubmit, onCancel, busy, error }) {
     sku: initial.sku || '',
     product_type: initial.product_type || '',
     unit_of_measure: initial.unit_of_measure || '',
+    raw_cost: initial.raw_cost ?? '',
+    tariff: initial.tariff ?? '',
     labb_cost: initial.labb_cost ?? '',
     msrp: initial.msrp ?? '',
-    description: initial.description || '',
+    drugs_and_levels: initial.drugs_and_levels || '',
     notes: initial.notes || '',
   });
   const u = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const num = (v) => (v === '' ? null : Number(v));
   const submit = (e) => {
     e.preventDefault();
     onSubmit({
@@ -188,9 +204,11 @@ function ProductForm({ initial, onSubmit, onCancel, busy, error }) {
       sku: f.sku || null,
       product_type: f.product_type || null,
       unit_of_measure: f.unit_of_measure || null,
+      raw_cost: num(f.raw_cost),
+      tariff: num(f.tariff),
       labb_cost: Number(f.labb_cost),
-      msrp: f.msrp === '' ? null : Number(f.msrp),
-      description: f.description || null,
+      msrp: num(f.msrp),
+      drugs_and_levels: f.drugs_and_levels || null,
       notes: f.notes || null,
     });
   };
@@ -221,7 +239,17 @@ function ProductForm({ initial, onSubmit, onCancel, busy, error }) {
         </div>
         <div className="row gap">
           <label className="field grow">
-            <span>Labb cost (cost of goods) *</span>
+            <span>Raw cost</span>
+            <input type="number" step="0.0001" min="0" value={f.raw_cost} onChange={u('raw_cost')} placeholder="Pre-tariff cost" />
+          </label>
+          <label className="field grow">
+            <span>Tariff</span>
+            <input type="number" step="0.0001" min="0" value={f.tariff} onChange={u('tariff')} placeholder="Tariff amount" />
+          </label>
+        </div>
+        <div className="row gap">
+          <label className="field grow">
+            <span>Labb cost (total cost of goods) *</span>
             <input type="number" step="0.0001" min="0" value={f.labb_cost} onChange={u('labb_cost')} required />
           </label>
           <label className="field grow">
@@ -230,12 +258,12 @@ function ProductForm({ initial, onSubmit, onCancel, busy, error }) {
           </label>
         </div>
         <label className="field">
-          <span>Description</span>
-          <input value={f.description} onChange={u('description')} />
+          <span>Drugs and levels</span>
+          <textarea rows={2} value={f.drugs_and_levels} onChange={u('drugs_and_levels')} placeholder="e.g. AMP 1000, COC 300, THC 50, OPI 2000" />
         </label>
         <label className="field">
           <span>Notes (internal)</span>
-          <textarea rows={3} value={f.notes} onChange={u('notes')} />
+          <textarea rows={2} value={f.notes} onChange={u('notes')} />
         </label>
         {error && <p className="error">{String(error.message || error)}</p>}
         <div className="row gap end">

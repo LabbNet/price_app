@@ -11,9 +11,11 @@ const productSchema = z.object({
   sku: z.string().max(64).nullable().optional(),
   product_type: z.string().max(100).nullable().optional(),
   unit_of_measure: z.string().max(50).nullable().optional(),
+  raw_cost: z.coerce.number().min(0).nullable().optional(),
+  tariff: z.coerce.number().min(0).nullable().optional(),
   labb_cost: z.coerce.number().min(0),
   msrp: z.coerce.number().min(0).nullable().optional(),
-  description: z.string().nullable().optional(),
+  drugs_and_levels: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   is_active: z.boolean().optional(),
 });
@@ -102,9 +104,12 @@ router.post('/import', requireStaff, async (req, res) => {
       sku: z.string().nullable().optional(),
       product_type: z.string().nullable().optional(),
       unit_of_measure: z.string().nullable().optional(),
+      raw_cost: z.any().optional(),
+      tariff: z.any().optional(),
       labb_cost: z.any().optional(),
       msrp: z.any().optional(),
-      description: z.string().nullable().optional(),
+      drugs_and_levels: z.string().nullable().optional(),
+      description: z.string().nullable().optional(), // legacy CSV compat
       notes: z.string().nullable().optional(),
     })
     .passthrough();
@@ -122,7 +127,7 @@ router.post('/import', requireStaff, async (req, res) => {
     const n = Number(v);
     return Number.isFinite(n) && n >= 0 ? n : 0;
   };
-  const toMsrp = (v) => {
+  const toDecimal = (v) => {
     if (v == null || v === '') return null;
     const n = Number(v);
     return Number.isFinite(n) && n >= 0 ? n : null;
@@ -132,9 +137,11 @@ router.post('/import', requireStaff, async (req, res) => {
     sku: normalize(r.sku),
     product_type: normalize(r.product_type),
     unit_of_measure: normalize(r.unit_of_measure),
+    raw_cost: toDecimal(r.raw_cost),
+    tariff: toDecimal(r.tariff),
     labb_cost: toCost(r.labb_cost),
-    msrp: toMsrp(r.msrp),
-    description: normalize(r.description),
+    msrp: toDecimal(r.msrp),
+    drugs_and_levels: normalize(r.drugs_and_levels) ?? normalize(r.description),
     notes: normalize(r.notes),
   }));
   const mode = parsed.data.mode;
