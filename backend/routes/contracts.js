@@ -7,6 +7,7 @@ const { requireAuth, requireStaff } = require('../middleware/auth');
 const { audit } = require('../services/audit');
 const { buildContext, buildPricingSnapshot, renderTemplate } = require('../services/merge');
 const { renderContractPdf, pdfPathFor } = require('../services/pdf');
+const { upload, withSubdir } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -355,6 +356,213 @@ router.get('/:id/pdf', async (req, res) => {
     return res.status(404).json({ error: 'pdf_not_generated' });
   }
   res.download(contract.pdf_path, `contract-${contract.id}.pdf`);
+});
+
+// --- Upload existing (already-signed) PDF as a contract --------------------
+
+router.post(
+  '/upload',
+  requireStaff,
+  withSubdir('uploaded'),
+  upload.single('pdf'),
+  async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'pdf_required' });
+
+    const schema = z.object({
+      client_id: z.string().uuid(),
+      title: z.string().min(1),
+      signer_name: z.string().nullable().optional(),
+      signer_title: z.string().nullable().optional(),
+      signer_email: z.string().nullable().optional(),
+      signed_on: z.string().nullable().optional(), // ISO date/datetime
+      notes: z.string().nullable().optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      // Clean up orphaned file on validation failure
+      try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ }
+      return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
+    }
+
+    const client = await db('clients').where({ id: parsed.data.client_id }).first();
+    if (!client) {
+      try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ }
+      return res.status(400).json({ error: 'client_not_found' });
+    }
+
+    // Use the client's current bucket as a best-effort association.
+    const currentAssignment = await db('client_bucket_assignments')
+      .where({ client_id: client.id })
+      .whereNull('unassigned_at')
+      .first();
+
+    const signedAt = parsed.data.signed_on ? new Date(parsed.data.signed_on) : null;
+
+    const [contract] = await db('contracts')
+      .insert({
+        client_id: client.id,
+        template_id: null,
+        template_version: null,
+        source: 'uploaded',
+        title: parsed.data.title,
+        bucket_id: currentAssignment?.bucket_id || null,
+        rendered_body: null,
+        merge_values: JSON.stringify({}),
+        pricing_snapshot: JSON.stringify([]),
+        status: 'active',
+        sent_at: signedAt || db.fn.now(),
+        signed_by_clinic_at: signedAt || db.fn.now(),
+        counter_signed_at: signedAt || db.fn.now(),
+        activated_at: signedAt || db.fn.now(),
+        pdf_path: req.file.path,
+        created_by: req.user.id,
+      })
+      .returning('*');
+
+    // Record the clinic signature metadata (if provided) so the signature
+    // panel still renders. This is a wet signature recorded from paper.
+    if (parsed.data.signer_name) {
+      await db('signatures').insert({
+        contract_id: contract.id,
+        party: 'clinic',
+        signer_name: parsed.data.signer_name,
+        signer_title: parsed.data.signer_title || null,
+        signer_email: parsed.data.signer_email || 'uploaded@paper',
+        signed_at: signedAt || db.fn.now(),
+        ip_address: null,
+        user_agent: 'uploaded-paper',
+      });
+    }
+
+    await audit({
+      req,
+      action: 'contract.upload',
+      entityType: 'contract',
+      entityId: contract.id,
+      after: contract,
+      notes: `uploaded ${req.file.originalname || 'contract.pdf'} (${req.file.size} bytes)`,
+    });
+
+    res.status(201).json({ contract });
+  },
+);
+
+// --- Addenda ---------------------------------------------------------------
+
+router.get('/:id/addenda', async (req, res) => {
+  const contract = await db('contracts').where({ id: req.params.id }).first();
+  if (!contract) return res.status(404).json({ error: 'not_found' });
+
+  const rows = await db('contract_addenda as a')
+    .leftJoin('users as u', 'u.id', 'a.created_by')
+    .where('a.contract_id', contract.id)
+    .select('a.*', 'u.email as created_by_email')
+    .orderBy('a.addendum_number', 'desc');
+  res.json({ addenda: rows });
+});
+
+router.post(
+  '/:id/addenda',
+  requireStaff,
+  withSubdir('addenda'),
+  upload.single('pdf'),
+  async (req, res) => {
+    const schema = z.object({
+      title: z.string().min(1),
+      description: z.string().nullable().optional(),
+      change_type: z.enum(['pricing_change', 'scope_change', 'renewal', 'termination', 'other'])
+        .optional()
+        .default('other'),
+      effective_date: z.string().nullable().optional(),
+      body: z.string().nullable().optional(),
+      refresh_pricing: z.string().nullable().optional(), // 'true' to snapshot current pricing
+      signer_name: z.string().nullable().optional(),
+      signer_title: z.string().nullable().optional(),
+      signer_email: z.string().nullable().optional(),
+      signed_at: z.string().nullable().optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      if (req.file) { try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ } }
+      return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
+    }
+
+    const contract = await db('contracts').where({ id: req.params.id }).first();
+    if (!contract) {
+      if (req.file) { try { fs.unlinkSync(req.file.path); } catch (e) { /* ignore */ } }
+      return res.status(404).json({ error: 'contract_not_found' });
+    }
+
+    let pricingSnapshot = null;
+    if (parsed.data.refresh_pricing === 'true') {
+      pricingSnapshot = await buildPricingSnapshot({ clientId: contract.client_id });
+    }
+
+    const addendum = await db.transaction(async (trx) => {
+      const maxRow = await trx('contract_addenda')
+        .where({ contract_id: contract.id })
+        .max('addendum_number as n')
+        .first();
+      const nextNumber = Number(maxRow?.n || 0) + 1;
+
+      const [row] = await trx('contract_addenda')
+        .insert({
+          contract_id: contract.id,
+          addendum_number: nextNumber,
+          title: parsed.data.title,
+          description: parsed.data.description || null,
+          change_type: parsed.data.change_type,
+          effective_date: parsed.data.effective_date || null,
+          source: req.file ? 'uploaded' : 'generated',
+          body: parsed.data.body || null,
+          pdf_path: req.file ? req.file.path : null,
+          pricing_snapshot: pricingSnapshot ? JSON.stringify(pricingSnapshot) : null,
+          previous_pricing_snapshot: JSON.stringify(contract.pricing_snapshot || []),
+          previous_body: contract.rendered_body || null,
+          signer_name: parsed.data.signer_name || null,
+          signer_title: parsed.data.signer_title || null,
+          signer_email: parsed.data.signer_email || null,
+          signed_at: parsed.data.signed_at || null,
+          ip_address: req.ip,
+          created_by: req.user.id,
+        })
+        .returning('*');
+      return row;
+    });
+
+    // If the addendum replaced pricing, reflect it on the parent contract so
+    // the "current" pricing_snapshot stays authoritative.
+    if (pricingSnapshot) {
+      await db('contracts')
+        .where({ id: contract.id })
+        .update({
+          pricing_snapshot: JSON.stringify(pricingSnapshot),
+          updated_at: db.fn.now(),
+        });
+    }
+
+    await audit({
+      req,
+      action: 'contract_addendum.create',
+      entityType: 'contract_addendum',
+      entityId: addendum.id,
+      after: addendum,
+      notes: `contract=${contract.id} #${addendum.addendum_number}`,
+    });
+
+    res.status(201).json({ addendum });
+  },
+);
+
+router.get('/:id/addenda/:aid/pdf', async (req, res) => {
+  const addendum = await db('contract_addenda')
+    .where({ id: req.params.aid, contract_id: req.params.id })
+    .first();
+  if (!addendum) return res.status(404).json({ error: 'not_found' });
+  if (!addendum.pdf_path || !fs.existsSync(addendum.pdf_path)) {
+    return res.status(404).json({ error: 'pdf_not_found' });
+  }
+  res.download(addendum.pdf_path, `addendum-${addendum.addendum_number}.pdf`);
 });
 
 async function loadContractByToken(token) {

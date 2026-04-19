@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost } from '../api';
+import { apiGet, apiPost, apiUpload } from '../api';
 
 const STATUS_LABEL = {
   draft: 'Draft',
@@ -26,6 +26,7 @@ const STATUS_BADGE = {
 export default function Contracts() {
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [clinicFilter, setClinicFilter] = useState('');
 
@@ -49,11 +50,23 @@ export default function Contracts() {
     },
   });
 
+  const uploadContract = useMutation({
+    mutationFn: (fields) => apiUpload('/api/contracts/upload', fields),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['contracts'] });
+      setUploading(false);
+      window.location.href = `/contracts/${r.contract.id}`;
+    },
+  });
+
   return (
     <div className="shell">
       <div className="row-between">
         <h1>Contracts</h1>
-        <button className="btn primary" onClick={() => setCreating(true)}>+ New contract</button>
+        <div className="row gap">
+          <button className="btn ghost" onClick={() => setUploading(true)}>Upload existing PDF</button>
+          <button className="btn primary" onClick={() => setCreating(true)}>+ New from template</button>
+        </div>
       </div>
 
       <div className="card">
@@ -114,6 +127,115 @@ export default function Contracts() {
           error={create.error}
         />
       )}
+
+      {uploading && (
+        <UploadContractForm
+          onCancel={() => { setUploading(false); uploadContract.reset(); }}
+          onSubmit={(fields) => uploadContract.mutate(fields)}
+          busy={uploadContract.isPending}
+          error={uploadContract.error}
+        />
+      )}
+    </div>
+  );
+}
+
+export function UploadContractForm({ initial = {}, onCancel, onSubmit, busy, error }) {
+  const [clinicId, setClinicId] = useState(initial.clinic_id || '');
+  const [clientId, setClientId] = useState(initial.client_id || '');
+  const [title, setTitle] = useState('');
+  const [signerName, setSignerName] = useState('');
+  const [signerTitle, setSignerTitle] = useState('');
+  const [signerEmail, setSignerEmail] = useState('');
+  const [signedOn, setSignedOn] = useState('');
+  const [notes, setNotes] = useState('');
+  const [file, setFile] = useState(null);
+
+  const clinicsQ = useQuery({ queryKey: ['clinics', false], queryFn: () => apiGet('/api/clinics') });
+  const clientsQ = useQuery({
+    queryKey: ['clients-for-upload', clinicId],
+    queryFn: () => apiGet(`/api/clients?clinic_id=${clinicId}&limit=500`),
+    enabled: !!clinicId,
+  });
+
+  const submit = (e) => {
+    e.preventDefault();
+    onSubmit({
+      client_id: clientId,
+      title,
+      signer_name: signerName || null,
+      signer_title: signerTitle || null,
+      signer_email: signerEmail || null,
+      signed_on: signedOn ? new Date(signedOn).toISOString() : null,
+      notes: notes || null,
+      pdf: file,
+    });
+  };
+
+  return (
+    <div className="modal" role="dialog">
+      <form className="card modal-card" onSubmit={submit}>
+        <h2>Upload existing contract</h2>
+        <p className="muted">Attach a PDF of a contract that was signed outside the app. Saved as an active contract linked to the client.</p>
+
+        {!initial.client_id && (
+          <>
+            <label className="field"><span>Clinic *</span>
+              <select value={clinicId} onChange={(e) => { setClinicId(e.target.value); setClientId(''); }} required>
+                <option value="">Select clinic…</option>
+                {(clinicsQ.data?.clinics || []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+            <label className="field"><span>Client *</span>
+              <select value={clientId} onChange={(e) => setClientId(e.target.value)} required disabled={!clinicId}>
+                <option value="">{clinicId ? 'Select client…' : 'Select a clinic first'}</option>
+                {(clientsQ.data?.clients || []).map((cl) => <option key={cl.id} value={cl.id}>{cl.name}</option>)}
+              </select>
+            </label>
+          </>
+        )}
+        {initial.client_id && initial.client_name && (
+          <p className="muted">Client: <strong>{initial.client_name}</strong></p>
+        )}
+
+        <label className="field"><span>Title *</span>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} required placeholder="e.g. Pricing Agreement – Signed 2025-11-12" />
+        </label>
+
+        <label className="field"><span>PDF file *</span>
+          <input type="file" accept="application/pdf,.pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} required />
+        </label>
+
+        <div className="row gap">
+          <label className="field grow"><span>Signer name</span>
+            <input value={signerName} onChange={(e) => setSignerName(e.target.value)} placeholder="Who signed on paper" />
+          </label>
+          <label className="field grow"><span>Signer title</span>
+            <input value={signerTitle} onChange={(e) => setSignerTitle(e.target.value)} />
+          </label>
+        </div>
+        <div className="row gap">
+          <label className="field grow"><span>Signer email</span>
+            <input type="email" value={signerEmail} onChange={(e) => setSignerEmail(e.target.value)} />
+          </label>
+          <label className="field grow"><span>Signed on</span>
+            <input type="date" value={signedOn} onChange={(e) => setSignedOn(e.target.value)} />
+          </label>
+        </div>
+
+        <label className="field"><span>Notes (internal)</span>
+          <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </label>
+
+        {error && <p className="error">{String(error.message || error)}</p>}
+
+        <div className="row gap end">
+          <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
+          <button type="submit" className="btn primary" disabled={!clientId || !title || !file || busy}>
+            {busy ? 'Uploading…' : 'Upload'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
