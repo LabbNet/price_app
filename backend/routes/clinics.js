@@ -5,6 +5,27 @@ const { requireAuth, requireStaff } = require('../middleware/auth');
 const { audit } = require('../services/audit');
 const { findDuplicates, processNewOrUpdated } = require('../services/dedup');
 
+// Non-fatal wrapper: if dedup blows up for any reason (missing migration,
+// query error, whatever), log it and return an empty result so the
+// create/update/import operation still succeeds.
+async function safeDedup(clinicId, ctx) {
+  try {
+    return await processNewOrUpdated(clinicId, ctx);
+  } catch (err) {
+    console.error('[dedup] non-fatal failure on clinic', clinicId, err.message, err.stack);
+    return { deleted: [], queued: [], error: err.message };
+  }
+}
+
+async function safeFindDuplicates(args) {
+  try {
+    return await findDuplicates(args);
+  } catch (err) {
+    console.error('[dedup] check-duplicate failed', err.message);
+    return [];
+  }
+}
+
 const router = express.Router();
 router.use(requireAuth);
 
@@ -84,7 +105,7 @@ router.get('/:id', async (req, res) => {
 // Pre-submit duplicate check — the UI calls this before showing the warning
 // modal so staff can decide whether to proceed. Not persisted.
 router.get('/check-duplicate', requireStaff, async (req, res) => {
-  const matches = await findDuplicates({
+  const matches = await safeFindDuplicates({
     address_line1: req.query.address_line1,
     city: req.query.city,
     state: req.query.state,
@@ -111,7 +132,7 @@ router.post('/', requireStaff, async (req, res) => {
 
   const result = await db.transaction(async (trx) => {
     const [row] = await trx('clinics').insert(parsed.data).returning('*');
-    const dedup = await processNewOrUpdated(row.id, { trx, actorId: req.user.id });
+    const dedup = await safeDedup(row.id, { trx, actorId: req.user.id });
     return { row, dedup };
   });
 
@@ -144,7 +165,7 @@ router.patch('/:id', requireStaff, async (req, res) => {
     const addressChanged = ['address_line1', 'city', 'state', 'postal_code']
       .some((f) => parsed.data[f] !== undefined && parsed.data[f] !== before[f]);
     const dedup = addressChanged
-      ? await processNewOrUpdated(row.id, { trx, actorId: req.user.id })
+      ? await safeDedup(row.id, { trx, actorId: req.user.id })
       : { deleted: [], queued: [] };
     return { row, dedup };
   });
@@ -269,7 +290,7 @@ router.post('/import', requireStaff, async (req, res) => {
     const del = [];
     const que = [];
     for (const r of ins) {
-      const result = await processNewOrUpdated(r.id, { trx, actorId: req.user.id });
+      const result = await safeDedup(r.id, { trx, actorId: req.user.id });
       if (result.deleted.length) del.push(...result.deleted);
       if (result.queued.length) que.push(...result.queued);
     }

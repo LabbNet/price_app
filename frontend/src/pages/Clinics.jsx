@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '../api';
 import CsvImportModal from '../components/CsvImportModal';
+import AddressLookup from '../components/AddressLookup';
 
 export const ACCOUNT_CATEGORIES = ['Employment', 'Corrections', 'Treatment', 'Education'];
 export const EMPLOYMENT_SUBCATEGORIES = [
@@ -379,7 +380,17 @@ export function ClinicForm({ initial = {}, onSubmit, onCancel, busy, error, titl
           <input value={f.primary_contact_phone} onChange={u('primary_contact_phone')} />
         </label>
         <label className="field"><span>Address</span>
-          <input value={f.address_line1} onChange={u('address_line1')} />
+          <AddressLookup
+            value={f.address_line1}
+            onChange={(v) => setF((prev) => ({ ...prev, address_line1: v }))}
+            onSelect={(parts) => setF((prev) => ({
+              ...prev,
+              address_line1: parts.address_line1 || prev.address_line1,
+              city: parts.city || prev.city,
+              state: parts.state || prev.state,
+              postal_code: parts.postal_code || prev.postal_code,
+            }))}
+          />
         </label>
         <div className="row gap">
           <label className="field grow"><span>City</span>

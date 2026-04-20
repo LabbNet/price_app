@@ -50,6 +50,8 @@ services:
     envVars:
       - key: VITE_API_URL
         sync: false
+      - key: VITE_GOOGLE_MAPS_API_KEY
+        sync: false
     routes:
       - type: rewrite
         source: /*
