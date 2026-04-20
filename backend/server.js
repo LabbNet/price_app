@@ -1,4 +1,16 @@
 require('dotenv').config();
+// Express 4 doesn't catch async route handler rejections by default —
+// monkey-patches it so a thrown error in any async handler reaches the
+// global error middleware instead of crashing the Node process.
+require('express-async-errors');
+
+// Belt and suspenders: log any escaped rejection before Node exits.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+});
 
 const express = require('express');
 const cors = require('cors');

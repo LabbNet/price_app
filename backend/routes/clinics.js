@@ -87,23 +87,12 @@ router.get('/', async (req, res) => {
   res.json({ clinics: rows });
 });
 
-router.get('/:id', async (req, res) => {
-  const clinic = await db('clinics as c')
-    .leftJoin('users as sr', 'sr.id', 'c.sales_rep_id')
-    .where('c.id', req.params.id)
-    .select(
-      'c.*',
-      'sr.email as sales_rep_email',
-      'sr.first_name as sales_rep_first_name',
-      'sr.last_name as sales_rep_last_name',
-    )
-    .first();
-  if (!clinic) return res.status(404).json({ error: 'not_found' });
-  res.json({ clinic });
-});
-
 // Pre-submit duplicate check — the UI calls this before showing the warning
 // modal so staff can decide whether to proceed. Not persisted.
+//
+// IMPORTANT: must be registered BEFORE GET /:id, otherwise Express matches
+// "/check-duplicate" against the :id pattern and tries to query that as a
+// UUID — which Postgres rejects, taking down the whole route handler.
 router.get('/check-duplicate', requireStaff, async (req, res) => {
   const matches = await safeFindDuplicates({
     address_line1: req.query.address_line1,
@@ -124,6 +113,21 @@ router.get('/check-duplicate', requireStaff, async (req, res) => {
       match_score: m.score,
     })),
   });
+});
+
+router.get('/:id', async (req, res) => {
+  const clinic = await db('clinics as c')
+    .leftJoin('users as sr', 'sr.id', 'c.sales_rep_id')
+    .where('c.id', req.params.id)
+    .select(
+      'c.*',
+      'sr.email as sales_rep_email',
+      'sr.first_name as sales_rep_first_name',
+      'sr.last_name as sales_rep_last_name',
+    )
+    .first();
+  if (!clinic) return res.status(404).json({ error: 'not_found' });
+  res.json({ clinic });
 });
 
 router.post('/', requireStaff, async (req, res) => {
