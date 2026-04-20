@@ -23,6 +23,7 @@ export default function BucketDetail() {
   const [importing, setImporting] = useState(false);
   const [search, setSearch] = useState('');
   const [enabledFilter, setEnabledFilter] = useState('all'); // all | on | off
+  const [typeFilter, setTypeFilter] = useState('all');
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;
 
@@ -86,9 +87,13 @@ export default function BucketDetail() {
   const { bucket, items } = detail.data;
   const usedProductIds = new Set(items.map((i) => i.product_id));
 
+  const productTypes = Array.from(new Set(items.map((i) => i.product_type).filter(Boolean))).sort();
+
   const filteredItems = items.filter((i) => {
     if (enabledFilter === 'on' && !i.is_enabled) return false;
     if (enabledFilter === 'off' && i.is_enabled) return false;
+    if (typeFilter === '__none__' && i.product_type) return false;
+    if (typeFilter !== 'all' && typeFilter !== '__none__' && i.product_type !== typeFilter) return false;
     if (search) {
       const q = search.toLowerCase();
       const hay = [i.product_name, i.product_type, i.unit_of_measure, i.notes]
@@ -167,6 +172,11 @@ export default function BucketDetail() {
             <option value="all">All items</option>
             <option value="on">Enabled only</option>
             <option value="off">Disabled only</option>
+          </select>
+          <select value={typeFilter} onChange={(e) => { setPage(0); setTypeFilter(e.target.value); }}>
+            <option value="all">All types</option>
+            {productTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+            {items.some((i) => !i.product_type) && <option value="__none__">(no type)</option>}
           </select>
         </div>
       </div>

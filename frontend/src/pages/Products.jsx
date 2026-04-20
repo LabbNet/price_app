@@ -32,6 +32,8 @@ const PRODUCT_CSV_HEADERS = [
 export default function Products() {
   const qc = useQueryClient();
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [typeFilter, setTypeFilter] = useState('all');
+  // The filter derived values are computed below, after the query resolves.
   const [editing, setEditing] = useState(null); // null | 'new' | product
   const [importing, setImporting] = useState(false);
 
@@ -79,57 +81,13 @@ export default function Products() {
       {list.isLoading && <p className="muted">Loading…</p>}
       {list.isError && <p className="error">{String(list.error.message || list.error)}</p>}
 
-      {list.data && (
-        <div className="card no-pad">
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>SKU</th>
-                <th>Type</th>
-                <th>UoM</th>
-                <th className="num">Raw</th>
-                <th className="num">Tariff</th>
-                <th className="num">Labb cost</th>
-                <th className="num">MSRP</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.data.products.length === 0 && (
-                <tr><td colSpan={10} className="muted center">No products yet.</td></tr>
-              )}
-              {list.data.products.map((p) => (
-                <tr key={p.id} className={p.is_active ? '' : 'dim'}>
-                  <td>
-                    <strong>{p.name}</strong>
-                    {p.drugs_and_levels && <div className="muted small">{p.drugs_and_levels}</div>}
-                  </td>
-                  <td className="small"><code>{p.sku || <span className="muted">—</span>}</code></td>
-                  <td>{p.product_type || <span className="muted">—</span>}</td>
-                  <td>{p.unit_of_measure || <span className="muted">—</span>}</td>
-                  <td className="num muted">{p.raw_cost != null ? `$${Number(p.raw_cost).toFixed(4)}` : '—'}</td>
-                  <td className="num muted">{p.tariff != null ? `$${Number(p.tariff).toFixed(4)}` : '—'}</td>
-                  <td className="num">${Number(p.labb_cost).toFixed(4)}</td>
-                  <td className="num">{p.msrp != null ? `$${Number(p.msrp).toFixed(4)}` : <span className="muted">—</span>}</td>
-                  <td>
-                    <span className={`badge ${p.is_active ? 'ok' : 'err'}`}>
-                      {p.is_active ? 'active' : 'inactive'}
-                    </span>
-                  </td>
-                  <td className="right">
-                    <button className="btn ghost" onClick={() => setEditing(p)}>Edit</button>
-                    <button className="btn ghost" onClick={() => toggle.mutate({ id: p.id, active: p.is_active })}>
-                      {p.is_active ? 'Deactivate' : 'Activate'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {list.data && <ProductsView
+        products={list.data.products}
+        typeFilter={typeFilter}
+        onTypeFilter={setTypeFilter}
+        onEdit={setEditing}
+        onToggle={(p) => toggle.mutate({ id: p.id, active: p.is_active })}
+      />}
 
       {editing && (
         <ProductForm
@@ -179,6 +137,82 @@ export default function Products() {
         />
       )}
     </div>
+  );
+}
+
+function ProductsView({ products, typeFilter, onTypeFilter, onEdit, onToggle }) {
+  const productTypes = Array.from(new Set(products.map((p) => p.product_type).filter(Boolean))).sort();
+  const hasUntyped = products.some((p) => !p.product_type);
+  const filtered = products.filter((p) => {
+    if (typeFilter === '__none__') return !p.product_type;
+    if (typeFilter !== 'all') return p.product_type === typeFilter;
+    return true;
+  });
+
+  return (
+    <>
+      <div className="card">
+        <div className="row gap" style={{ flexWrap: 'wrap' }}>
+          <select value={typeFilter} onChange={(e) => onTypeFilter(e.target.value)}>
+            <option value="all">All types</option>
+            {productTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+            {hasUntyped && <option value="__none__">(no type)</option>}
+          </select>
+          <span className="muted small">{filtered.length} of {products.length} products</span>
+        </div>
+      </div>
+      <div className="card no-pad">
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>SKU</th>
+              <th>Type</th>
+              <th>UoM</th>
+              <th className="num">Raw</th>
+              <th className="num">Tariff</th>
+              <th className="num">Labb cost</th>
+              <th className="num">MSRP</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 && (
+              <tr><td colSpan={10} className="muted center">
+                {products.length === 0 ? 'No products yet.' : 'No products match this filter.'}
+              </td></tr>
+            )}
+            {filtered.map((p) => (
+              <tr key={p.id} className={p.is_active ? '' : 'dim'}>
+                <td>
+                  <strong>{p.name}</strong>
+                  {p.drugs_and_levels && <div className="muted small">{p.drugs_and_levels}</div>}
+                </td>
+                <td className="small"><code>{p.sku || <span className="muted">—</span>}</code></td>
+                <td>{p.product_type || <span className="muted">—</span>}</td>
+                <td>{p.unit_of_measure || <span className="muted">—</span>}</td>
+                <td className="num muted">{p.raw_cost != null ? `$${Number(p.raw_cost).toFixed(4)}` : '—'}</td>
+                <td className="num muted">{p.tariff != null ? `$${Number(p.tariff).toFixed(4)}` : '—'}</td>
+                <td className="num">${Number(p.labb_cost).toFixed(4)}</td>
+                <td className="num">{p.msrp != null ? `$${Number(p.msrp).toFixed(4)}` : <span className="muted">—</span>}</td>
+                <td>
+                  <span className={`badge ${p.is_active ? 'ok' : 'err'}`}>
+                    {p.is_active ? 'active' : 'inactive'}
+                  </span>
+                </td>
+                <td className="right">
+                  <button className="btn ghost" onClick={() => onEdit(p)}>Edit</button>
+                  <button className="btn ghost" onClick={() => onToggle(p)}>
+                    {p.is_active ? 'Deactivate' : 'Activate'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

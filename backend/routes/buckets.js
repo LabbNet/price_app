@@ -79,7 +79,7 @@ router.get('/:id', async (req, res) => {
       'p.labb_cost',
       'p.is_active as product_is_active',
     )
-    .orderBy('p.name');
+    .orderByRaw("COALESCE(p.product_type, 'zzz') ASC, p.name ASC");
 
   res.json({ bucket, items });
 });

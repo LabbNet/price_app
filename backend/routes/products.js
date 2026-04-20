@@ -27,7 +27,7 @@ router.use(requireAuth);
 
 router.get('/', async (req, res) => {
   const includeInactive = req.query.include_inactive === 'true';
-  const q = db('products').orderBy('name');
+  const q = db('products').orderByRaw("COALESCE(product_type, 'zzz') ASC, name ASC");
   if (!includeInactive) q.where({ is_active: true });
   const rows = await q;
   res.json({ products: rows });
