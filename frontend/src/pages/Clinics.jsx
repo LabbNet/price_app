@@ -67,7 +67,15 @@ export default function Clinics() {
 
   const create = useMutation({
     mutationFn: (data) => apiPost('/api/clinics', data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['clinics'] }); setCreating(false); },
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['clinics'] });
+      setCreating(false);
+      if (r.auto_deleted) {
+        alert('This account exactly matched an existing one — the new record was auto-deleted as a duplicate.');
+      } else if (r.queued_for_review?.length) {
+        alert(`Saved. ${r.queued_for_review.length} possible duplicate flagged in the Duplicates queue.`);
+      }
+    },
   });
 
   const [importRepId, setImportRepId] = useState('');

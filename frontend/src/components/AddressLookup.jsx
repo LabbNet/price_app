@@ -14,22 +14,36 @@ import { useEffect, useRef, useState } from 'react';
  */
 
 let scriptLoadPromise = null;
+let lastLoadError = null;
+
 function loadGoogleMaps(apiKey) {
-  if (typeof window === 'undefined') return Promise.resolve(false);
-  if (window.google?.maps?.places) return Promise.resolve(true);
-  if (!apiKey) return Promise.resolve(false);
+  if (typeof window === 'undefined') return Promise.resolve({ ok: false, reason: 'ssr' });
+  if (window.google?.maps?.places) return Promise.resolve({ ok: true });
+  if (!apiKey) {
+    console.warn('[AddressLookup] VITE_GOOGLE_MAPS_API_KEY is not set — autocomplete disabled.');
+    return Promise.resolve({ ok: false, reason: 'no_key' });
+  }
   if (scriptLoadPromise) return scriptLoadPromise;
 
   scriptLoadPromise = new Promise((resolve) => {
     const s = document.createElement('script');
     s.id = 'google-maps-script';
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places`;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&loading=async`;
     s.async = true;
     s.defer = true;
-    s.onload = () => resolve(true);
+    s.onload = () => {
+      // Google logs auth errors via this hook on the window — capture them.
+      window.gm_authFailure = () => {
+        lastLoadError = 'Google Maps auth failed (check key restrictions / billing)';
+        console.warn('[AddressLookup]', lastLoadError);
+      };
+      console.info('[AddressLookup] Google Maps Places loaded');
+      resolve({ ok: true });
+    };
     s.onerror = () => {
-      console.warn('[AddressLookup] Google Maps failed to load');
-      resolve(false);
+      lastLoadError = 'Google Maps script failed to load';
+      console.warn('[AddressLookup]', lastLoadError);
+      resolve({ ok: false, reason: 'script_error' });
     };
     document.head.appendChild(s);
   });
@@ -59,18 +73,25 @@ function parseAddressComponents(components = []) {
 export default function AddressLookup({ value, onChange, onSelect, placeholder, disabled }) {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
   const inputRef = useRef(null);
-  const [mapsReady, setMapsReady] = useState(false);
+  const [status, setStatus] = useState({ state: 'loading' });
 
   useEffect(() => {
     let cancelled = false;
-    loadGoogleMaps(apiKey).then((ok) => { if (!cancelled) setMapsReady(ok); });
+    loadGoogleMaps(apiKey).then((res) => {
+      if (cancelled) return;
+      if (res.ok) setStatus({ state: 'ready' });
+      else setStatus({ state: 'unavailable', reason: res.reason });
+    });
     return () => { cancelled = true; };
   }, [apiKey]);
 
   useEffect(() => {
-    if (!mapsReady || !inputRef.current) return;
-    const Autocomplete = window.google.maps.places.Autocomplete;
-    if (!Autocomplete) return;
+    if (status.state !== 'ready' || !inputRef.current) return;
+    const Autocomplete = window.google?.maps?.places?.Autocomplete;
+    if (!Autocomplete) {
+      setStatus({ state: 'unavailable', reason: 'autocomplete_missing' });
+      return;
+    }
 
     const ac = new Autocomplete(inputRef.current, {
       types: ['address'],
@@ -85,22 +106,34 @@ export default function AddressLookup({ value, onChange, onSelect, placeholder, 
       onSelect?.(parsed);
     });
 
-    return () => {
-      if (listener?.remove) listener.remove();
-      // The container for pac-container lingers — not leaking, just a
-      // detail of Google's widget. Not worth fighting.
-    };
-  }, [mapsReady, onSelect]);
+    return () => { if (listener?.remove) listener.remove(); };
+  }, [status.state, onSelect]);
+
+  const reasonLabel = {
+    no_key: 'API key not set',
+    script_error: 'script blocked',
+    autocomplete_missing: 'Places library not loaded',
+    ssr: 'server side',
+  };
 
   return (
-    <input
-      ref={inputRef}
-      type="text"
-      value={value || ''}
-      onChange={(e) => onChange?.(e.target.value)}
-      placeholder={placeholder || (mapsReady ? 'Start typing an address…' : 'Street address')}
-      autoComplete="off"
-      disabled={disabled}
-    />
+    <>
+      <input
+        ref={inputRef}
+        type="text"
+        value={value || ''}
+        onChange={(e) => onChange?.(e.target.value)}
+        placeholder={placeholder || (status.state === 'ready' ? 'Start typing an address…' : 'Street address')}
+        autoComplete="off"
+        disabled={disabled}
+      />
+      <span className="muted small" style={{ marginTop: 2 }}>
+        {status.state === 'ready' && '✓ Google address suggestions enabled'}
+        {status.state === 'loading' && 'Loading address suggestions…'}
+        {status.state === 'unavailable' && (
+          <>⚠ Address autocomplete unavailable ({reasonLabel[status.reason] || status.reason}). Type the address manually.</>
+        )}
+      </span>
+    </>
   );
 }

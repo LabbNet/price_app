@@ -106,6 +106,12 @@ async function processNewOrUpdated(clinicId, { trx = db, actorId = null } = {}) 
   const subject = await trx('clinics').where({ id: clinicId }).first();
   if (!subject) return { deleted: [], queued: [] };
 
+  const hasAddr = !!(subject.address_line1 || subject.postal_code || (subject.city && subject.state));
+  if (!hasAddr) {
+    console.log('[dedup] skipping clinic', clinicId, '— no usable address fields');
+    return { deleted: [], queued: [] };
+  }
+
   const candidates = await findDuplicates({
     address_line1: subject.address_line1,
     city: subject.city,
@@ -113,6 +119,10 @@ async function processNewOrUpdated(clinicId, { trx = db, actorId = null } = {}) 
     postal_code: subject.postal_code,
     excludeId: subject.id,
   });
+
+  console.log('[dedup] clinic', clinicId, 'addr=', JSON.stringify({
+    line: subject.address_line1, city: subject.city, state: subject.state, zip: subject.postal_code,
+  }), '— candidates:', candidates.length);
 
   const deleted = [];
   const queued = [];
@@ -123,6 +133,7 @@ async function processNewOrUpdated(clinicId, { trx = db, actorId = null } = {}) 
       const subjectDate = new Date(subject.created_at);
       const otherDate = new Date(other.created_at);
       const toDeleteId = subjectDate > otherDate ? subject.id : other.id;
+      console.log('[dedup] 4/4 match → auto-deleting', toDeleteId, '(kept', toDeleteId === subject.id ? other.id : subject.id, ')');
       await trx('clinics').where({ id: toDeleteId }).del();
       deleted.push(toDeleteId);
       // If we deleted the subject, we're done looping against it.
@@ -143,7 +154,9 @@ async function processNewOrUpdated(clinicId, { trx = db, actorId = null } = {}) 
       const [row] = await trx('duplicate_review_queue')
         .insert({ clinic_a_id: a.id, clinic_b_id: b.id, match_score: score })
         .returning('id');
-      queued.push({ id: row.id, clinic_a_id: a.id, clinic_b_id: b.id, match_score: score });
+      const queueId = typeof row === 'object' ? row.id : row;
+      console.log('[dedup]', score, '/4 match → queued for review', { queueId, a: a.id, b: b.id });
+      queued.push({ id: queueId, clinic_a_id: a.id, clinic_b_id: b.id, match_score: score });
     }
   }
 

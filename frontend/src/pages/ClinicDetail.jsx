@@ -58,7 +58,15 @@ export default function ClinicDetail() {
 
   const saveClinic = useMutation({
     mutationFn: (data) => apiPatch(`/api/clinics/${id}`, data),
-    onSuccess: () => { invalidate(); setEditing(false); },
+    onSuccess: (r) => {
+      invalidate();
+      setEditing(false);
+      if (r.auto_deleted) {
+        alert('Address now exactly matches an existing account — this record was auto-deleted as a duplicate.');
+      } else if (r.queued_for_review?.length) {
+        alert(`Saved. ${r.queued_for_review.length} possible duplicate flagged in the Duplicates queue.`);
+      }
+    },
   });
 
   const createClient = useMutation({
