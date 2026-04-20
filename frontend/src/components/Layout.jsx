@@ -14,7 +14,7 @@ export default function Layout() {
             {!portal && <NavLink to="/" end>Home</NavLink>}
             {isStaff(user) && <NavLink to="/products">Products</NavLink>}
             {isStaff(user) && <NavLink to="/buckets">Buckets</NavLink>}
-            {isStaff(user) && <NavLink to="/clinics">Clinics</NavLink>}
+            {isStaff(user) && <NavLink to="/clinics">Accounts</NavLink>}
             {isStaff(user) && <NavLink to="/clients">Clients</NavLink>}
             {isStaff(user) && <NavLink to="/special-pricing">Special pricing</NavLink>}
             {isStaff(user) && <NavLink to="/contracts">Contracts</NavLink>}

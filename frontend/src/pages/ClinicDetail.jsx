@@ -92,7 +92,12 @@ export default function ClinicDetail() {
         <div>
           <h1>{c.name}</h1>
           {c.legal_name && c.legal_name !== c.name && <p className="muted">{c.legal_name}</p>}
-          {!c.is_active && <span className="badge err">inactive</span>}
+          <div className="row gap">
+            <span className={`badge ${c.account_type === 'pro' ? 'ok' : ''}`}>
+              {c.account_type === 'pro' ? 'PRO account' : 'Standard account'}
+            </span>
+            {!c.is_active && <span className="badge err">inactive</span>}
+          </div>
         </div>
         <div className="row gap">
           <button className="btn ghost" onClick={() => setEditing(true)}>Edit</button>
@@ -121,6 +126,17 @@ export default function ClinicDetail() {
         {c.notes && <><h2>Notes</h2><p>{c.notes}</p></>}
       </div>
 
+      {c.account_type === 'standard' ? (
+        <div className="card" style={{ marginTop: '1.5rem' }}>
+          <h2>End-user account</h2>
+          <p className="muted">
+            Standard accounts are end-users themselves — they don't have clients underneath.
+            Pricing and contracts attach directly to the account (portal + contract flows
+            from this page are coming soon).
+          </p>
+        </div>
+      ) : (
+        <>
       <div className="row-between" style={{ marginTop: '1.5rem' }}>
         <h2>Clients ({total})</h2>
         <div className="row gap">
@@ -202,11 +218,13 @@ export default function ClinicDetail() {
           )}
         </>
       )}
+        </>
+      )}
 
       {editing && (
         <ClinicForm
           initial={c}
-          title="Edit clinic"
+          title="Edit account"
           onCancel={() => setEditing(false)}
           onSubmit={(data) => saveClinic.mutate(data)}
           busy={saveClinic.isPending}

@@ -36,6 +36,7 @@ export default function Products() {
   // The filter derived values are computed below, after the query resolves.
   const [editing, setEditing] = useState(null); // null | 'new' | product
   const [importing, setImporting] = useState(false);
+  const [overwritePricing, setOverwritePricing] = useState(true);
 
   const list = useQuery({
     queryKey: ['products', includeInactive],
@@ -54,7 +55,10 @@ export default function Products() {
   });
 
   const importCsv = useMutation({
-    mutationFn: (products) => apiPost('/api/products/import', { products, mode: 'update_existing' }),
+    mutationFn: (products) => apiPost('/api/products/import', {
+      products,
+      mode: overwritePricing ? 'update_existing' : 'skip_existing',
+    }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
   });
 
@@ -102,9 +106,34 @@ export default function Products() {
       {importing && (
         <CsvImportModal
           title="Import products from CSV"
-          description="New products are created. Existing products (matched by name, case-insensitive) have their cost and details updated."
+          description="New products are always created. Choose whether to overwrite the cost and MSRP on existing products (matched by name, case-insensitive)."
           templateHeaders={PRODUCT_CSV_HEADERS}
           templateFilename="products-template.csv"
+          extraFields={
+            <label className="field">
+              <span>Overwrite pricing on existing products?</span>
+              <div className="row gap" role="radiogroup">
+                <label className="row gap">
+                  <input
+                    type="radio"
+                    name="overwrite_pricing"
+                    checked={overwritePricing === true}
+                    onChange={() => setOverwritePricing(true)}
+                  />
+                  <span><strong>Yes</strong> — update cost + MSRP to match the CSV</span>
+                </label>
+                <label className="row gap">
+                  <input
+                    type="radio"
+                    name="overwrite_pricing"
+                    checked={overwritePricing === false}
+                    onChange={() => setOverwritePricing(false)}
+                  />
+                  <span><strong>No</strong> — skip existing, only add new products</span>
+                </label>
+              </div>
+            </label>
+          }
           parseRow={(r) => ({
             name: r.name || '',
             sku: r.sku || null,

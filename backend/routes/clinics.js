@@ -11,6 +11,7 @@ const clinicSchema = z.object({
   name: z.string().min(1).max(200),
   legal_name: z.string().nullable().optional(),
   ein: z.string().nullable().optional(),
+  account_type: z.enum(['pro', 'standard']).optional(),
   sales_rep_id: z.string().uuid({ message: 'sales rep is required' }),
   primary_contact_name: z.string().nullable().optional(),
   primary_contact_email: z.string().email().nullable().optional().or(z.literal('').transform(() => null)),
@@ -33,6 +34,7 @@ const clinicUpdateSchema = clinicSchema.partial().refine(
 
 router.get('/', async (req, res) => {
   const includeInactive = req.query.include_inactive === 'true';
+  const accountType = req.query.account_type;
   const rows = await db('clinics as c')
     .leftJoin('clients as cl', (j) => j.on('cl.clinic_id', 'c.id'))
     .leftJoin('users as sr', 'sr.id', 'c.sales_rep_id')
@@ -40,6 +42,7 @@ router.get('/', async (req, res) => {
       'c.id',
       'c.name',
       'c.legal_name',
+      'c.account_type',
       'c.primary_contact_name',
       'c.primary_contact_email',
       'c.is_active',
@@ -52,6 +55,7 @@ router.get('/', async (req, res) => {
       db.raw('COUNT(DISTINCT cl.id)::int as total_client_count'),
     )
     .modify((q) => { if (!includeInactive) q.where('c.is_active', true); })
+    .modify((q) => { if (accountType) q.where('c.account_type', accountType); })
     .groupBy('c.id', 'sr.id')
     .orderBy('c.name');
   res.json({ clinics: rows });

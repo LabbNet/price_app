@@ -34,12 +34,19 @@ const CLINIC_CSV_HEADERS = [
 export default function Clinics() {
   const qc = useQueryClient();
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [typeFilter, setTypeFilter] = useState('all');
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
 
   const list = useQuery({
-    queryKey: ['clinics', includeInactive],
-    queryFn: () => apiGet(`/api/clinics${includeInactive ? '?include_inactive=true' : ''}`),
+    queryKey: ['clinics', includeInactive, typeFilter],
+    queryFn: () => {
+      const q = new URLSearchParams();
+      if (includeInactive) q.set('include_inactive', 'true');
+      if (typeFilter !== 'all') q.set('account_type', typeFilter);
+      const qs = q.toString();
+      return apiGet(`/api/clinics${qs ? '?' + qs : ''}`);
+    },
   });
 
   const create = useMutation({
@@ -62,18 +69,23 @@ export default function Clinics() {
   return (
     <div className="shell">
       <div className="row-between">
-        <h1>Clinics</h1>
+        <h1>Accounts</h1>
         <div className="row gap">
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+            <option value="all">All types</option>
+            <option value="pro">PRO only</option>
+            <option value="standard">Standard only</option>
+          </select>
           <label className="row gap muted">
             <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
             Show inactive
           </label>
           <button className="btn ghost" onClick={() => setImporting(true)}>Import CSV</button>
-          <button className="btn primary" onClick={() => setCreating(true)}>+ New clinic</button>
+          <button className="btn primary" onClick={() => setCreating(true)}>+ New account</button>
         </div>
       </div>
 
-      <p className="muted">Parent organizations. Each clinic has one or more clients, and each client signs its own contract.</p>
+      <p className="muted"><strong>PRO</strong> accounts have one or more clients underneath (each client signs its own contract). <strong>Standard</strong> accounts are end-users directly — no clients.</p>
 
       {list.isLoading && <p className="muted">Loading…</p>}
       {list.isError && <p className="error">{String(list.error.message || list.error)}</p>}
@@ -84,22 +96,28 @@ export default function Clinics() {
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Type</th>
                 <th>Sales rep</th>
                 <th>Contact</th>
-                <th className="num">Active clients</th>
+                <th className="num">Clients</th>
                 <th>Status</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {list.data.clinics.length === 0 && (
-                <tr><td colSpan={6} className="muted center">No clinics yet.</td></tr>
+                <tr><td colSpan={7} className="muted center">No accounts yet.</td></tr>
               )}
               {list.data.clinics.map((c) => (
                 <tr key={c.id} className={c.is_active ? '' : 'dim'}>
                   <td>
                     <Link to={`/clinics/${c.id}`}><strong>{c.name}</strong></Link>
                     {c.legal_name && c.legal_name !== c.name && <div className="muted small">{c.legal_name}</div>}
+                  </td>
+                  <td>
+                    <span className={`badge ${c.account_type === 'pro' ? 'ok' : ''}`}>
+                      {c.account_type === 'pro' ? 'PRO' : 'Standard'}
+                    </span>
                   </td>
                   <td className="small">
                     {c.sales_rep_email
@@ -116,9 +134,15 @@ export default function Clinics() {
                     {c.primary_contact_email && <div className="muted">{c.primary_contact_email}</div>}
                   </td>
                   <td className="num">
-                    {c.active_client_count}
-                    {c.total_client_count !== c.active_client_count && (
-                      <div className="muted small">/ {c.total_client_count} total</div>
+                    {c.account_type === 'standard' ? (
+                      <span className="muted small">end-user</span>
+                    ) : (
+                      <>
+                        {c.active_client_count}
+                        {c.total_client_count !== c.active_client_count && (
+                          <div className="muted small">/ {c.total_client_count} total</div>
+                        )}
+                      </>
                     )}
                   </td>
                   <td><span className={`badge ${c.is_active ? 'ok' : 'err'}`}>{c.is_active ? 'active' : 'inactive'}</span></td>
@@ -185,19 +209,20 @@ export default function Clinics() {
           busy={importCsv.isPending}
           error={importCsv.error}
           result={importCsv.data}
-          renderResult={(r) => <p className="muted">✓ Imported {r.imported} clinic(s).</p>}
+          renderResult={(r) => <p className="muted">✓ Imported {r.imported} account(s).</p>}
         />
       )}
     </div>
   );
 }
 
-export function ClinicForm({ initial = {}, onSubmit, onCancel, busy, error, title = 'New clinic' }) {
+export function ClinicForm({ initial = {}, onSubmit, onCancel, busy, error, title = 'New account' }) {
   const admins = useAdminUsers();
   const [f, setF] = useState({
     name: initial.name || '',
     legal_name: initial.legal_name || '',
     ein: initial.ein || '',
+    account_type: initial.account_type || 'pro',
     sales_rep_id: initial.sales_rep_id || '',
     primary_contact_name: initial.primary_contact_name || '',
     primary_contact_email: initial.primary_contact_email || '',
@@ -215,6 +240,7 @@ export function ClinicForm({ initial = {}, onSubmit, onCancel, busy, error, titl
       name: f.name,
       legal_name: f.legal_name || null,
       ein: f.ein || null,
+      account_type: f.account_type,
       sales_rep_id: f.sales_rep_id || null,
       primary_contact_name: f.primary_contact_name || null,
       primary_contact_email: f.primary_contact_email || null,
@@ -232,6 +258,19 @@ export function ClinicForm({ initial = {}, onSubmit, onCancel, busy, error, titl
         <h2>{title}</h2>
         <label className="field"><span>Name *</span>
           <input value={f.name} onChange={u('name')} required autoFocus />
+        </label>
+        <label className="field">
+          <span>Account type *</span>
+          <div className="row gap" role="radiogroup">
+            <label className="row gap">
+              <input type="radio" name="account_type" value="pro" checked={f.account_type === 'pro'} onChange={u('account_type')} />
+              <span><strong>PRO</strong> — has one or more clients underneath</span>
+            </label>
+            <label className="row gap">
+              <input type="radio" name="account_type" value="standard" checked={f.account_type === 'standard'} onChange={u('account_type')} />
+              <span><strong>Standard</strong> — end-user, no clients</span>
+            </label>
+          </div>
         </label>
         <label className="field"><span>Sales rep *</span>
           <select value={f.sales_rep_id} onChange={u('sales_rep_id')} required>
