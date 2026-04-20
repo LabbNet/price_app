@@ -18,27 +18,49 @@ let lastLoadError = null;
 
 function loadGoogleMaps(apiKey) {
   if (typeof window === 'undefined') return Promise.resolve({ ok: false, reason: 'ssr' });
-  if (window.google?.maps?.places) return Promise.resolve({ ok: true });
+  if (window.google?.maps?.places?.Autocomplete) return Promise.resolve({ ok: true });
   if (!apiKey) {
     console.warn('[AddressLookup] VITE_GOOGLE_MAPS_API_KEY is not set — autocomplete disabled.');
     return Promise.resolve({ ok: false, reason: 'no_key' });
   }
   if (scriptLoadPromise) return scriptLoadPromise;
 
+  // Capture Google's auth-failure hook before the script loads so it's
+  // already in place when Google evaluates the key.
+  window.gm_authFailure = () => {
+    lastLoadError = 'Google Maps auth failed (check key restrictions / billing)';
+    console.warn('[AddressLookup]', lastLoadError);
+  };
+
   scriptLoadPromise = new Promise((resolve) => {
     const s = document.createElement('script');
     s.id = 'google-maps-script';
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&loading=async`;
+    // Note: do NOT pass loading=async unless you also use importLibrary().
+    // With loading=async, `libraries=places` loads on its own schedule and
+    // window.google.maps.places.Autocomplete may not exist when onload fires.
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&v=quarterly`;
     s.async = true;
     s.defer = true;
-    s.onload = () => {
-      // Google logs auth errors via this hook on the window — capture them.
-      window.gm_authFailure = () => {
-        lastLoadError = 'Google Maps auth failed (check key restrictions / billing)';
+    s.onload = async () => {
+      try {
+        // Belt-and-braces: if importLibrary is available, await the places
+        // module explicitly. On classic loading paths it's a no-op.
+        if (window.google?.maps?.importLibrary) {
+          try { await window.google.maps.importLibrary('places'); } catch { /* fall through */ }
+        }
+        if (window.google?.maps?.places?.Autocomplete) {
+          console.info('[AddressLookup] Google Maps Places loaded');
+          resolve({ ok: true });
+        } else {
+          lastLoadError = 'Places library loaded but Autocomplete class missing';
+          console.warn('[AddressLookup]', lastLoadError);
+          resolve({ ok: false, reason: 'autocomplete_missing' });
+        }
+      } catch (err) {
+        lastLoadError = `Places import failed: ${err.message}`;
         console.warn('[AddressLookup]', lastLoadError);
-      };
-      console.info('[AddressLookup] Google Maps Places loaded');
-      resolve({ ok: true });
+        resolve({ ok: false, reason: 'import_failed' });
+      }
     };
     s.onerror = () => {
       lastLoadError = 'Google Maps script failed to load';
@@ -113,6 +135,7 @@ export default function AddressLookup({ value, onChange, onSelect, placeholder, 
     no_key: 'API key not set',
     script_error: 'script blocked',
     autocomplete_missing: 'Places library not loaded',
+    import_failed: 'Places library failed to import',
     ssr: 'server side',
   };
 
