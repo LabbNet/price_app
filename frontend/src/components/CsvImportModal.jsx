@@ -31,6 +31,8 @@ export default function CsvImportModal({
   error,
   result,
   renderResult,
+  extraFields,
+  submitDisabled,
 }) {
   const [text, setText] = useState('');
   const [preview, setPreview] = useState(null);
@@ -92,6 +94,8 @@ export default function CsvImportModal({
           <button type="button" className="btn ghost" onClick={downloadTemplate}>↓ Download template</button>
         </div>
         {description && <p className="muted">{description}</p>}
+
+        {extraFields}
 
         <div className="card" style={{ background: 'var(--bg)', margin: '0.5rem 0' }}>
           <div className="muted small" style={{ marginBottom: '0.35rem' }}>Expected columns (case-insensitive):</div>
@@ -162,7 +166,7 @@ export default function CsvImportModal({
           <button
             type="button"
             className="btn primary"
-            disabled={validRows.length === 0 || busy}
+            disabled={validRows.length === 0 || busy || submitDisabled}
             onClick={submit}
           >{busy ? 'Importing…' : `Import ${validRows.length}`}</button>
         </div>

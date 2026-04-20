@@ -114,11 +114,15 @@ export default function BucketDetail() {
           >+ Add item</button>
         </div>
       </div>
+      <p className="muted small">
+        All active products start in every bucket at MSRP and default to <strong>Off</strong>. Toggle a row on to let clients see that product and price in their portal; off means the client sees a Request Price button instead.
+      </p>
 
       <div className="card no-pad">
         <table className="tbl">
           <thead>
             <tr>
+              <th>Visible</th>
               <th>Product</th>
               <th>UoM</th>
               <th className="num">Unit price</th>
@@ -131,7 +135,7 @@ export default function BucketDetail() {
           </thead>
           <tbody>
             {items.length === 0 && (
-              <tr><td colSpan={8} className="muted center">No items yet. Add one to start building the price list.</td></tr>
+              <tr><td colSpan={9} className="muted center">No items yet. Add one to start building the price list.</td></tr>
             )}
             {items.map((i) => {
               const unit = Number(i.unit_price);
@@ -140,7 +144,17 @@ export default function BucketDetail() {
               const marginPct = unit > 0 ? (margin / unit) * 100 : 0;
               const marginClass = margin < 0 ? 'err' : margin === 0 ? '' : 'ok';
               return (
-                <tr key={i.id}>
+                <tr key={i.id} className={i.is_enabled ? '' : 'dim'}>
+                  <td>
+                    <label className="toggle" title={i.is_enabled ? 'Clients can see this product and price' : 'Clients cannot see the price; they see Request Price'}>
+                      <input
+                        type="checkbox"
+                        checked={!!i.is_enabled}
+                        onChange={(e) => updateItem.mutate({ itemId: i.id, data: { is_enabled: e.target.checked } })}
+                      />
+                      <span className="small">{i.is_enabled ? 'On' : 'Off'}</span>
+                    </label>
+                  </td>
                   <td>
                     <strong>{i.product_name}</strong>
                     {i.product_type && <div className="muted small">{i.product_type}</div>}

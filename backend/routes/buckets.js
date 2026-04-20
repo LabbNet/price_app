@@ -3,6 +3,7 @@ const { z } = require('zod');
 const db = require('../db/knex');
 const { requireAuth, requireStaff } = require('../middleware/auth');
 const { audit } = require('../services/audit');
+const { seedBucketWithAllProducts } = require('../services/bucketSeed');
 
 const router = express.Router();
 
@@ -22,12 +23,14 @@ const itemSchema = z.object({
   unit_price: z.coerce.number().min(0),
   total_price: z.coerce.number().min(0).nullable().optional(),
   notes: z.string().nullable().optional(),
+  is_enabled: z.boolean().optional(),
 });
 
 const itemUpdateSchema = z.object({
   unit_price: z.coerce.number().min(0).optional(),
   total_price: z.coerce.number().min(0).nullable().optional(),
   notes: z.string().nullable().optional(),
+  is_enabled: z.boolean().optional(),
 });
 
 // List buckets (with item counts, optional inactive)
@@ -68,6 +71,7 @@ router.get('/:id', async (req, res) => {
       'bi.unit_price',
       'bi.total_price',
       'bi.notes',
+      'bi.is_enabled',
       'bi.created_at',
       'p.name as product_name',
       'p.product_type',
@@ -84,12 +88,23 @@ router.post('/', requireStaff, async (req, res) => {
   const parsed = bucketSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
 
-  const [row] = await db('pricing_buckets')
-    .insert({ ...parsed.data, created_by: req.user.id })
-    .returning('*');
+  const { row, seededCount } = await db.transaction(async (trx) => {
+    const [bucket] = await trx('pricing_buckets')
+      .insert({ ...parsed.data, created_by: req.user.id })
+      .returning('*');
+    const count = await seedBucketWithAllProducts(bucket.id, { trx });
+    return { row: bucket, seededCount: count };
+  });
 
-  await audit({ req, action: 'bucket.create', entityType: 'pricing_bucket', entityId: row.id, after: row });
-  res.status(201).json({ bucket: row });
+  await audit({
+    req,
+    action: 'bucket.create',
+    entityType: 'pricing_bucket',
+    entityId: row.id,
+    after: row,
+    notes: `seeded ${seededCount} products at MSRP (all disabled by default)`,
+  });
+  res.status(201).json({ bucket: row, seeded: seededCount });
 });
 
 router.patch('/:id', requireStaff, async (req, res) => {
@@ -163,6 +178,7 @@ router.post('/:id/copy', requireStaff, async (req, res) => {
           unit_price: i.unit_price,
           total_price: i.total_price,
           notes: i.notes,
+          is_enabled: i.is_enabled,
         })),
       );
     }

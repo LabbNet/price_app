@@ -427,6 +427,18 @@ input[type="checkbox"] {
   width: 16px;
   height: 16px;
 }
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.toggle input[type="checkbox"] { margin: 0; }
+.toggle input[type="checkbox"]:checked + span { color: var(--labb-blue); }
 input[type="file"] {
   font-size: 13px;
   color: var(--text-muted);

@@ -101,12 +101,23 @@ export default function ClinicDetail() {
 
       <div className="card">
         <div className="row gap" style={{ flexWrap: 'wrap' }}>
+          <Field
+            label="Sales rep"
+            value={
+              c.sales_rep_email
+                ? `${[c.sales_rep_first_name, c.sales_rep_last_name].filter(Boolean).join(' ') || c.sales_rep_email} · ${c.sales_rep_email}`
+                : null
+            }
+          />
           <Field label="Contact" value={c.primary_contact_name} />
           <Field label="Email" value={c.primary_contact_email} />
           <Field label="Phone" value={c.primary_contact_phone} />
           <Field label="EIN" value={c.ein} />
           <Field label="Location" value={[c.city, c.state].filter(Boolean).join(', ')} />
         </div>
+        {!c.sales_rep_id && (
+          <p className="error">⚠ This clinic has no sales rep assigned. Edit to set one.</p>
+        )}
         {c.notes && <><h2>Notes</h2><p>{c.notes}</p></>}
       </div>
 

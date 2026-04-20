@@ -3,6 +3,7 @@ const { z } = require('zod');
 const db = require('../db/knex');
 const { requireAuth, requireStaff } = require('../middleware/auth');
 const { audit } = require('../services/audit');
+const { addProductToAllBuckets } = require('../services/bucketSeed');
 
 const router = express.Router();
 
@@ -42,9 +43,21 @@ router.post('/', requireStaff, async (req, res) => {
   const parsed = productSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
 
-  const [row] = await db('products').insert(parsed.data).returning('*');
-  await audit({ req, action: 'product.create', entityType: 'product', entityId: row.id, after: row });
-  res.status(201).json({ product: row });
+  const { row, propagated } = await db.transaction(async (trx) => {
+    const [product] = await trx('products').insert(parsed.data).returning('*');
+    const count = await addProductToAllBuckets(product.id, { trx });
+    return { row: product, propagated: count };
+  });
+
+  await audit({
+    req,
+    action: 'product.create',
+    entityType: 'product',
+    entityId: row.id,
+    after: row,
+    notes: `added to ${propagated} bucket(s) at MSRP (disabled by default)`,
+  });
+  res.status(201).json({ product: row, propagated_to_buckets: propagated });
 });
 
 router.patch('/:id', requireStaff, async (req, res) => {
@@ -170,6 +183,7 @@ router.post('/import', requireStaff, async (req, res) => {
       } else {
         const [row] = await trx('products').insert(p).returning(['id', 'name']);
         created.push(row);
+        await addProductToAllBuckets(row.id, { trx });
       }
     }
   });

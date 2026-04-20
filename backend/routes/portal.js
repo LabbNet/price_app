@@ -88,6 +88,26 @@ router.get('/clients/:id/pricing', async (req, res) => {
     if (r.source === 'none') continue;
     // Portal users shouldn't see Labb cost
     const { labb_cost, ...safe } = r;
+
+    // Bucket-sourced items respect is_enabled — disabled means "show product
+    // but withhold price; let the client request it". Special pricing is
+    // always considered visible since it was created intentionally.
+    const visible = r.source === 'special' ? true : r.is_enabled === true;
+
+    if (!visible) {
+      effective.push({
+        product_id: p.id,
+        product_name: p.name,
+        sku: p.sku,
+        unit_of_measure: p.unit_of_measure,
+        drugs_and_levels: p.drugs_and_levels,
+        msrp: null,
+        source: r.source,
+        price_hidden: true,
+      });
+      continue;
+    }
+
     effective.push({
       product_id: p.id,
       product_name: p.name,

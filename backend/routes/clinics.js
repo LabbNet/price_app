@@ -11,6 +11,7 @@ const clinicSchema = z.object({
   name: z.string().min(1).max(200),
   legal_name: z.string().nullable().optional(),
   ein: z.string().nullable().optional(),
+  sales_rep_id: z.string().uuid({ message: 'sales rep is required' }),
   primary_contact_name: z.string().nullable().optional(),
   primary_contact_email: z.string().email().nullable().optional().or(z.literal('').transform(() => null)),
   primary_contact_phone: z.string().nullable().optional(),
@@ -24,12 +25,17 @@ const clinicSchema = z.object({
   is_active: z.boolean().optional(),
 });
 
-const clinicUpdateSchema = clinicSchema.partial();
+// Updates are partial — but sales_rep_id must not be cleared to null.
+const clinicUpdateSchema = clinicSchema.partial().refine(
+  (data) => !('sales_rep_id' in data) || !!data.sales_rep_id,
+  { message: 'sales rep cannot be cleared', path: ['sales_rep_id'] },
+);
 
 router.get('/', async (req, res) => {
   const includeInactive = req.query.include_inactive === 'true';
   const rows = await db('clinics as c')
     .leftJoin('clients as cl', (j) => j.on('cl.clinic_id', 'c.id'))
+    .leftJoin('users as sr', 'sr.id', 'c.sales_rep_id')
     .select(
       'c.id',
       'c.name',
@@ -38,17 +44,30 @@ router.get('/', async (req, res) => {
       'c.primary_contact_email',
       'c.is_active',
       'c.created_at',
+      'c.sales_rep_id',
+      'sr.email as sales_rep_email',
+      'sr.first_name as sales_rep_first_name',
+      'sr.last_name as sales_rep_last_name',
       db.raw('COUNT(DISTINCT cl.id) FILTER (WHERE cl.is_active)::int as active_client_count'),
       db.raw('COUNT(DISTINCT cl.id)::int as total_client_count'),
     )
     .modify((q) => { if (!includeInactive) q.where('c.is_active', true); })
-    .groupBy('c.id')
+    .groupBy('c.id', 'sr.id')
     .orderBy('c.name');
   res.json({ clinics: rows });
 });
 
 router.get('/:id', async (req, res) => {
-  const clinic = await db('clinics').where({ id: req.params.id }).first();
+  const clinic = await db('clinics as c')
+    .leftJoin('users as sr', 'sr.id', 'c.sales_rep_id')
+    .where('c.id', req.params.id)
+    .select(
+      'c.*',
+      'sr.email as sales_rep_email',
+      'sr.first_name as sales_rep_first_name',
+      'sr.last_name as sales_rep_last_name',
+    )
+    .first();
   if (!clinic) return res.status(404).json({ error: 'not_found' });
   res.json({ clinic });
 });
@@ -154,6 +173,7 @@ router.post('/import', requireStaff, async (req, res) => {
     .passthrough();
 
   const importSchema = z.object({
+    sales_rep_id: z.string().uuid({ message: 'sales rep is required' }),
     clinics: z.array(importRowSchema).min(1).max(5000),
   });
   const parsed = importSchema.safeParse(req.body);
@@ -164,6 +184,7 @@ router.post('/import', requireStaff, async (req, res) => {
     name: (r.name && r.name.trim()) || '(unnamed)',
     legal_name: normalize(r.legal_name),
     ein: normalize(r.ein),
+    sales_rep_id: parsed.data.sales_rep_id,
     primary_contact_name: normalize(r.primary_contact_name),
     primary_contact_email: normalize(r.primary_contact_email),
     primary_contact_phone: normalize(r.primary_contact_phone),

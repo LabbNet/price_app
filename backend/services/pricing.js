@@ -77,7 +77,7 @@ async function resolveEffectivePrice({ clientId, productId, trx = db }) {
     .where('cba.client_id', clientId)
     .whereNull('cba.unassigned_at')
     .andWhere('bi.product_id', productId)
-    .select('bi.unit_price', 'bi.total_price', 'bi.notes', 'cba.bucket_id')
+    .select('bi.unit_price', 'bi.total_price', 'bi.notes', 'bi.is_enabled', 'cba.bucket_id')
     .first();
 
   if (bucketItem) {
@@ -88,6 +88,7 @@ async function resolveEffectivePrice({ clientId, productId, trx = db }) {
       total_price: bucketItem.total_price != null ? Number(bucketItem.total_price) : null,
       labb_cost: Number(product.labb_cost),
       notes: bucketItem.notes,
+      is_enabled: bucketItem.is_enabled,
     };
   }
 

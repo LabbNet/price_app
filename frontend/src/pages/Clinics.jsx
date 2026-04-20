@@ -4,6 +4,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '../api';
 import CsvImportModal from '../components/CsvImportModal';
 
+// Dropdown source for sales rep — admin users only.
+function useAdminUsers() {
+  return useQuery({
+    queryKey: ['users', 'admin'],
+    queryFn: () => apiGet('/api/users?role=admin&active=true'),
+  });
+}
+function formatRep(u) {
+  if (!u) return '';
+  const name = [u.first_name, u.last_name].filter(Boolean).join(' ');
+  return name ? `${name} (${u.email})` : u.email;
+}
+
 const CLINIC_CSV_HEADERS = [
   { key: 'name', required: true },
   { key: 'legal_name' },
@@ -34,8 +47,10 @@ export default function Clinics() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['clinics'] }); setCreating(false); },
   });
 
+  const [importRepId, setImportRepId] = useState('');
+  const admins = useAdminUsers();
   const importCsv = useMutation({
-    mutationFn: (clinics) => apiPost('/api/clinics/import', { clinics }),
+    mutationFn: (clinics) => apiPost('/api/clinics/import', { sales_rep_id: importRepId, clinics }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['clinics'] }); },
   });
 
@@ -69,6 +84,7 @@ export default function Clinics() {
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Sales rep</th>
                 <th>Contact</th>
                 <th className="num">Active clients</th>
                 <th>Status</th>
@@ -77,13 +93,23 @@ export default function Clinics() {
             </thead>
             <tbody>
               {list.data.clinics.length === 0 && (
-                <tr><td colSpan={5} className="muted center">No clinics yet.</td></tr>
+                <tr><td colSpan={6} className="muted center">No clinics yet.</td></tr>
               )}
               {list.data.clinics.map((c) => (
                 <tr key={c.id} className={c.is_active ? '' : 'dim'}>
                   <td>
                     <Link to={`/clinics/${c.id}`}><strong>{c.name}</strong></Link>
                     {c.legal_name && c.legal_name !== c.name && <div className="muted small">{c.legal_name}</div>}
+                  </td>
+                  <td className="small">
+                    {c.sales_rep_email
+                      ? (
+                        <>
+                          {[c.sales_rep_first_name, c.sales_rep_last_name].filter(Boolean).join(' ') || c.sales_rep_email}
+                          <div className="muted">{c.sales_rep_email}</div>
+                        </>
+                      )
+                      : <span className="badge err">unassigned</span>}
                   </td>
                   <td className="small">
                     {c.primary_contact_name || <span className="muted">—</span>}
@@ -121,9 +147,20 @@ export default function Clinics() {
       {importing && (
         <CsvImportModal
           title="Import clinics from CSV"
-          description="Create parent organizations in bulk. Duplicates are not checked — clinics with the same name are allowed."
+          description="Create parent organizations in bulk. Duplicates are not checked — clinics with the same name are allowed. All imported clinics get the same sales rep; edit individuals afterward if needed."
           templateHeaders={CLINIC_CSV_HEADERS}
           templateFilename="clinics-template.csv"
+          extraFields={
+            <label className="field"><span>Sales rep for all imported clinics *</span>
+              <select value={importRepId} onChange={(e) => setImportRepId(e.target.value)} required>
+                <option value="">Select an admin user…</option>
+                {(admins.data?.users || []).map((a) => (
+                  <option key={a.id} value={a.id}>{formatRep(a)}</option>
+                ))}
+              </select>
+            </label>
+          }
+          submitDisabled={!importRepId}
           parseRow={(r) => ({
             name: r.name || '',
             legal_name: r.legal_name || null,
@@ -156,10 +193,12 @@ export default function Clinics() {
 }
 
 export function ClinicForm({ initial = {}, onSubmit, onCancel, busy, error, title = 'New clinic' }) {
+  const admins = useAdminUsers();
   const [f, setF] = useState({
     name: initial.name || '',
     legal_name: initial.legal_name || '',
     ein: initial.ein || '',
+    sales_rep_id: initial.sales_rep_id || '',
     primary_contact_name: initial.primary_contact_name || '',
     primary_contact_email: initial.primary_contact_email || '',
     primary_contact_phone: initial.primary_contact_phone || '',
@@ -176,6 +215,7 @@ export function ClinicForm({ initial = {}, onSubmit, onCancel, busy, error, titl
       name: f.name,
       legal_name: f.legal_name || null,
       ein: f.ein || null,
+      sales_rep_id: f.sales_rep_id || null,
       primary_contact_name: f.primary_contact_name || null,
       primary_contact_email: f.primary_contact_email || null,
       primary_contact_phone: f.primary_contact_phone || null,
@@ -192,6 +232,17 @@ export function ClinicForm({ initial = {}, onSubmit, onCancel, busy, error, titl
         <h2>{title}</h2>
         <label className="field"><span>Name *</span>
           <input value={f.name} onChange={u('name')} required autoFocus />
+        </label>
+        <label className="field"><span>Sales rep *</span>
+          <select value={f.sales_rep_id} onChange={u('sales_rep_id')} required>
+            <option value="">Select an admin user…</option>
+            {(admins.data?.users || []).map((a) => (
+              <option key={a.id} value={a.id}>{formatRep(a)}</option>
+            ))}
+          </select>
+          {admins.data && admins.data.users.length === 0 && (
+            <span className="muted small">No admin users yet — create one in the Users tab first.</span>
+          )}
         </label>
         <div className="row gap">
           <label className="field grow"><span>Legal name</span>

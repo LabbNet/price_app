@@ -19,6 +19,7 @@ export default function Layout() {
             {isStaff(user) && <NavLink to="/special-pricing">Special pricing</NavLink>}
             {isStaff(user) && <NavLink to="/contracts">Contracts</NavLink>}
             {isStaff(user) && <NavLink to="/contract-templates">Templates</NavLink>}
+            {isStaff(user) && <NavLink to="/price-requests">Requests</NavLink>}
             {isStaff(user) && <NavLink to="/users">Users</NavLink>}
             {portal && <NavLink to="/portal" end>My pricing &amp; contracts</NavLink>}
           </div>
