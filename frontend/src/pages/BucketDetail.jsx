@@ -21,6 +21,10 @@ export default function BucketDetail() {
   const [copying, setCopying] = useState(false);
   const [editingItemId, setEditingItemId] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [search, setSearch] = useState('');
+  const [enabledFilter, setEnabledFilter] = useState('all'); // all | on | off
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
 
   const detail = useQuery({
     queryKey: ['bucket', id],
@@ -71,11 +75,33 @@ export default function BucketDetail() {
     onSuccess: () => invalidate(),
   });
 
+  const bulkToggle = useMutation({
+    mutationFn: (is_enabled) => apiPost(`/api/buckets/${id}/items/set-enabled`, { is_enabled }),
+    onSuccess: () => invalidate(),
+  });
+
   if (detail.isLoading) return <div className="shell"><p className="muted">Loading…</p></div>;
   if (detail.isError) return <div className="shell"><p className="error">{String(detail.error.message || detail.error)}</p></div>;
 
   const { bucket, items } = detail.data;
   const usedProductIds = new Set(items.map((i) => i.product_id));
+
+  const filteredItems = items.filter((i) => {
+    if (enabledFilter === 'on' && !i.is_enabled) return false;
+    if (enabledFilter === 'off' && i.is_enabled) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const hay = [i.product_name, i.product_type, i.unit_of_measure, i.notes]
+        .filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  const totalFiltered = filteredItems.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageItems = filteredItems.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+  const enabledCount = items.filter((i) => i.is_enabled).length;
   const availableProducts = (products.data?.products || []).filter((p) => !usedProductIds.has(p.id));
   const editingItem = items.find((i) => i.id === editingItemId);
 
@@ -103,8 +129,18 @@ export default function BucketDetail() {
       )}
 
       <div className="row-between" style={{ marginTop: '1.5rem' }}>
-        <h2>Items ({items.length})</h2>
+        <h2>Items ({items.length} · {enabledCount} on)</h2>
         <div className="row gap">
+          <button
+            className="btn ghost"
+            disabled={bulkToggle.isPending || enabledCount === items.length}
+            onClick={() => { if (confirm(`Enable all ${items.length} products in this bucket?`)) bulkToggle.mutate(true); }}
+          >Enable all</button>
+          <button
+            className="btn ghost"
+            disabled={bulkToggle.isPending || enabledCount === 0}
+            onClick={() => { if (confirm(`Disable all ${items.length} products in this bucket?`)) bulkToggle.mutate(false); }}
+          >Disable all</button>
           <button className="btn ghost" onClick={() => setImporting(true)}>Import CSV</button>
           <button
             className="btn primary"
@@ -117,6 +153,23 @@ export default function BucketDetail() {
       <p className="muted small">
         All active products start in every bucket at MSRP and default to <strong>Off</strong>. Toggle a row on to let clients see that product and price in their portal; off means the client sees a Request Price button instead.
       </p>
+
+      <div className="card">
+        <div className="row gap" style={{ flexWrap: 'wrap' }}>
+          <input
+            className="search grow"
+            placeholder="Search by product name, type, UoM, notes…"
+            value={search}
+            onChange={(e) => { setPage(0); setSearch(e.target.value); }}
+            style={{ minWidth: 240 }}
+          />
+          <select value={enabledFilter} onChange={(e) => { setPage(0); setEnabledFilter(e.target.value); }}>
+            <option value="all">All items</option>
+            <option value="on">Enabled only</option>
+            <option value="off">Disabled only</option>
+          </select>
+        </div>
+      </div>
 
       <div className="card no-pad">
         <table className="tbl">
@@ -137,7 +190,10 @@ export default function BucketDetail() {
             {items.length === 0 && (
               <tr><td colSpan={9} className="muted center">No items yet. Add one to start building the price list.</td></tr>
             )}
-            {items.map((i) => {
+            {items.length > 0 && pageItems.length === 0 && (
+              <tr><td colSpan={9} className="muted center">No items match the current filter.</td></tr>
+            )}
+            {pageItems.map((i) => {
               const unit = Number(i.unit_price);
               const cost = Number(i.labb_cost);
               const margin = unit - cost;
@@ -181,6 +237,20 @@ export default function BucketDetail() {
           </tbody>
         </table>
       </div>
+
+      {totalFiltered > PAGE_SIZE && (
+        <div className="row-between">
+          <span className="muted small">
+            {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, totalFiltered)} of {totalFiltered}
+            {totalFiltered !== items.length && <> (filtered from {items.length})</>}
+          </span>
+          <div className="row gap">
+            <button className="btn ghost" disabled={safePage === 0} onClick={() => setPage(safePage - 1)}>← Prev</button>
+            <span className="muted small">Page {safePage + 1} / {totalPages}</span>
+            <button className="btn ghost" disabled={safePage >= totalPages - 1} onClick={() => setPage(safePage + 1)}>Next →</button>
+          </div>
+        </div>
+      )}
 
       {editingMeta && (
         <BucketMetaForm

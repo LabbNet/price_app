@@ -105,4 +105,41 @@ function contractActivatedEmail({ contract, client }) {
   return { subject, text, html };
 }
 
-module.exports = { inviteEmail, contractSignEmail, contractActivatedEmail };
+// ----- Price request (client-portal → sales rep) --------------------------
+
+function priceRequestEmail({ request, client, clinic, product, requester }) {
+  const link = appUrl('/price-requests');
+  const subject = `Price request — ${client?.name || 'client'} · ${product?.name || 'product'}`;
+
+  const lines = [
+    `A client has asked for pricing on a product that's currently disabled in their bucket.`,
+    '',
+    `Clinic: ${clinic?.name || ''}`,
+    `Client: ${client?.name || ''}`,
+    `Product: ${product?.name || ''}${product?.sku ? ` (${product.sku})` : ''}`,
+    `MSRP: ${product?.msrp != null ? '$' + Number(product.msrp).toFixed(4) : '—'}`,
+    '',
+    requester?.email ? `Requested by: ${requester.email}` : '',
+    request?.message ? `Note: ${request.message}` : '',
+    '',
+    `Respond in the portal: ${link}`,
+  ].filter(Boolean).join('\n');
+
+  const html = wrap(`
+    <h1 style="margin:0 0 8px;font-size:20px">New price request</h1>
+    <p>A client asked for pricing on a product that's currently disabled.</p>
+    <table style="border-collapse:collapse;margin:12px 0 16px;font-size:14px">
+      <tr><td style="padding:4px 12px 4px 0;color:#8b94a7">Clinic</td><td><strong>${clinic?.name || ''}</strong></td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#8b94a7">Client</td><td><strong>${client?.name || ''}</strong></td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#8b94a7">Product</td><td><strong>${product?.name || ''}</strong>${product?.sku ? ` <code>${product.sku}</code>` : ''}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#8b94a7">MSRP</td><td>${product?.msrp != null ? '$' + Number(product.msrp).toFixed(4) : '—'}</td></tr>
+      ${requester?.email ? `<tr><td style="padding:4px 12px 4px 0;color:#8b94a7">Requested by</td><td>${requester.email}</td></tr>` : ''}
+    </table>
+    ${request?.message ? `<p style="padding:12px;background:#f3f5f9;border-radius:8px;border-left:3px solid #3f73b9"><em>${request.message}</em></p>` : ''}
+    ${button(link, 'Open request')}
+  `);
+
+  return { subject, text: lines, html };
+}
+
+module.exports = { inviteEmail, contractSignEmail, contractActivatedEmail, priceRequestEmail };

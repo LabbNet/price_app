@@ -3,6 +3,8 @@ const { z } = require('zod');
 const db = require('../db/knex');
 const { requireAuth, requireStaff } = require('../middleware/auth');
 const { audit } = require('../services/audit');
+const { sendEmail } = require('../services/email');
+const { priceRequestEmail } = require('../services/emailTemplates');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -55,7 +57,37 @@ router.post('/', async (req, res) => {
     after: row,
     notes: `client=${parsed.data.client_id} product=${product.name}`,
   });
-  res.status(201).json({ request: row });
+
+  // Notify the clinic's sales rep (or any admin if no rep assigned).
+  const client = await db('clients').where({ id: row.client_id }).first();
+  const clinic = client ? await db('clinics').where({ id: client.clinic_id }).first() : null;
+
+  let recipient = null;
+  if (clinic?.sales_rep_id) {
+    recipient = await db('users').where({ id: clinic.sales_rep_id, is_active: true }).first();
+  }
+  if (!recipient) {
+    recipient = await db('users').where({ role: 'admin', is_active: true }).orderBy('created_at').first();
+  }
+
+  let emailResult = { sent: false, reason: 'no_recipient' };
+  if (recipient) {
+    const msg = priceRequestEmail({
+      request: row,
+      client,
+      clinic,
+      product,
+      requester: req.user,
+    });
+    emailResult = await sendEmail({
+      to: recipient.email,
+      subject: msg.subject,
+      text: msg.text,
+      html: msg.html,
+    });
+  }
+
+  res.status(201).json({ request: row, email: { ...emailResult, to: recipient?.email || null } });
 });
 
 // Staff: list price requests with joined context

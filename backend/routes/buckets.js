@@ -253,6 +253,35 @@ router.delete('/:id/items/:itemId', requireStaff, async (req, res) => {
 });
 
 /**
+ * Bulk toggle every item in this bucket on or off at once. Used by
+ * the "Enable all / Disable all" buttons on the bucket detail page
+ * for the 250-clinic-at-MSRP rollout case.
+ */
+router.post('/:id/items/set-enabled', requireStaff, async (req, res) => {
+  const schema = z.object({ is_enabled: z.boolean() });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
+
+  const bucket = await db('pricing_buckets').where({ id: req.params.id }).first();
+  if (!bucket) return res.status(404).json({ error: 'not_found' });
+
+  const updated = await db('bucket_items')
+    .where({ bucket_id: req.params.id })
+    .update({ is_enabled: parsed.data.is_enabled, updated_at: db.fn.now() });
+
+  await audit({
+    req,
+    action: 'bucket_item.bulk_set_enabled',
+    entityType: 'pricing_bucket',
+    entityId: req.params.id,
+    notes: `set ${updated} item(s) → ${parsed.data.is_enabled ? 'enabled' : 'disabled'}`,
+    after: { is_enabled: parsed.data.is_enabled, count: updated },
+  });
+
+  res.json({ updated, is_enabled: parsed.data.is_enabled });
+});
+
+/**
  * Bulk import bucket items from a CSV-style payload. Each row identifies a
  * product by product_name (case-insensitive match against active products).
  * Existing items are updated with the new price; new items are inserted.
