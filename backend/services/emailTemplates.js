@@ -117,7 +117,7 @@ function priceRequestEmail({ request, client, clinic, product, requester }) {
     `Clinic: ${clinic?.name || ''}`,
     `Client: ${client?.name || ''}`,
     `Product: ${product?.name || ''}${product?.sku ? ` (${product.sku})` : ''}`,
-    `MSRP: ${product?.msrp != null ? '$' + Number(product.msrp).toFixed(4) : '—'}`,
+    `MSRP: ${product?.msrp != null ? '$' + Number(product.msrp).toFixed(2) : '—'}`,
     '',
     requester?.email ? `Requested by: ${requester.email}` : '',
     request?.message ? `Note: ${request.message}` : '',
@@ -132,7 +132,7 @@ function priceRequestEmail({ request, client, clinic, product, requester }) {
       <tr><td style="padding:4px 12px 4px 0;color:#8b94a7">Clinic</td><td><strong>${clinic?.name || ''}</strong></td></tr>
       <tr><td style="padding:4px 12px 4px 0;color:#8b94a7">Client</td><td><strong>${client?.name || ''}</strong></td></tr>
       <tr><td style="padding:4px 12px 4px 0;color:#8b94a7">Product</td><td><strong>${product?.name || ''}</strong>${product?.sku ? ` <code>${product.sku}</code>` : ''}</td></tr>
-      <tr><td style="padding:4px 12px 4px 0;color:#8b94a7">MSRP</td><td>${product?.msrp != null ? '$' + Number(product.msrp).toFixed(4) : '—'}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#8b94a7">MSRP</td><td>${product?.msrp != null ? '$' + Number(product.msrp).toFixed(2) : '—'}</td></tr>
       ${requester?.email ? `<tr><td style="padding:4px 12px 4px 0;color:#8b94a7">Requested by</td><td>${requester.email}</td></tr>` : ''}
     </table>
     ${request?.message ? `<p style="padding:12px;background:#f3f5f9;border-radius:8px;border-left:3px solid #3f73b9"><em>${request.message}</em></p>` : ''}

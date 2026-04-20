@@ -192,10 +192,10 @@ function ProductsView({ products, typeFilter, onTypeFilter, onEdit, onToggle }) 
                 <td className="small"><code>{p.sku || <span className="muted">—</span>}</code></td>
                 <td>{p.product_type || <span className="muted">—</span>}</td>
                 <td>{p.unit_of_measure || <span className="muted">—</span>}</td>
-                <td className="num muted">{p.raw_cost != null ? `$${Number(p.raw_cost).toFixed(4)}` : '—'}</td>
-                <td className="num muted">{p.tariff != null ? `$${Number(p.tariff).toFixed(4)}` : '—'}</td>
-                <td className="num">${Number(p.labb_cost).toFixed(4)}</td>
-                <td className="num">{p.msrp != null ? `$${Number(p.msrp).toFixed(4)}` : <span className="muted">—</span>}</td>
+                <td className="num muted">{p.raw_cost != null ? `$${Number(p.raw_cost).toFixed(2)}` : '—'}</td>
+                <td className="num muted">{p.tariff != null ? `$${Number(p.tariff).toFixed(2)}` : '—'}</td>
+                <td className="num">${Number(p.labb_cost).toFixed(2)}</td>
+                <td className="num">{p.msrp != null ? `$${Number(p.msrp).toFixed(2)}` : <span className="muted">—</span>}</td>
                 <td>
                   <span className={`badge ${p.is_active ? 'ok' : 'err'}`}>
                     {p.is_active ? 'active' : 'inactive'}
@@ -274,21 +274,21 @@ function ProductForm({ initial, onSubmit, onCancel, busy, error }) {
         <div className="row gap">
           <label className="field grow">
             <span>Raw cost</span>
-            <input type="number" step="0.0001" min="0" value={f.raw_cost} onChange={u('raw_cost')} placeholder="Pre-tariff cost" />
+            <input type="number" step="0.01" min="0" value={f.raw_cost} onChange={u('raw_cost')} placeholder="Pre-tariff cost" />
           </label>
           <label className="field grow">
             <span>Tariff</span>
-            <input type="number" step="0.0001" min="0" value={f.tariff} onChange={u('tariff')} placeholder="Tariff amount" />
+            <input type="number" step="0.01" min="0" value={f.tariff} onChange={u('tariff')} placeholder="Tariff amount" />
           </label>
         </div>
         <div className="row gap">
           <label className="field grow">
             <span>Labb cost (total cost of goods) *</span>
-            <input type="number" step="0.0001" min="0" value={f.labb_cost} onChange={u('labb_cost')} required />
+            <input type="number" step="0.01" min="0" value={f.labb_cost} onChange={u('labb_cost')} required />
           </label>
           <label className="field grow">
             <span>MSRP</span>
-            <input type="number" step="0.0001" min="0" value={f.msrp} onChange={u('msrp')} placeholder="Suggested retail" />
+            <input type="number" step="0.01" min="0" value={f.msrp} onChange={u('msrp')} placeholder="Suggested retail" />
           </label>
         </div>
         <label className="field">

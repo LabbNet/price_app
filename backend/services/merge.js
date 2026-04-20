@@ -101,8 +101,8 @@ function pricingTableToText(rows) {
   const data = rows.map((r) => [
     r.product_name,
     r.unit_of_measure || '',
-    `$${Number(r.unit_price).toFixed(4)}`,
-    r.total_price != null ? `$${Number(r.total_price).toFixed(4)}` : '',
+    `$${Number(r.unit_price).toFixed(2)}`,
+    r.total_price != null ? `$${Number(r.total_price).toFixed(2)}` : '',
   ]);
   const widths = headers.map((h, i) => Math.max(h.length, ...data.map((d) => d[i].length)));
   const pad = (s, w) => s + ' '.repeat(Math.max(0, w - s.length));
@@ -118,8 +118,8 @@ function pricingTableToHtml(rows) {
   const body = rows.map((r) => `<tr>
     <td>${esc(r.product_name)}</td>
     <td>${esc(r.unit_of_measure || '')}</td>
-    <td>$${Number(r.unit_price).toFixed(4)}</td>
-    <td>${r.total_price != null ? '$' + Number(r.total_price).toFixed(4) : ''}</td>
+    <td>$${Number(r.unit_price).toFixed(2)}</td>
+    <td>${r.total_price != null ? '$' + Number(r.total_price).toFixed(2) : ''}</td>
   </tr>`).join('');
   return `<table class="pricing-table">${head}${body}</table>`;
 }

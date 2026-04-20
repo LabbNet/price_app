@@ -226,12 +226,12 @@ export default function BucketDetail() {
                     {i.product_type && <div className="muted small">{i.product_type}</div>}
                   </td>
                   <td>{i.unit_of_measure || <span className="muted">—</span>}</td>
-                  <td className="num">${unit.toFixed(4)}</td>
-                  <td className="num">{i.total_price != null ? `$${Number(i.total_price).toFixed(4)}` : <span className="muted">—</span>}</td>
-                  <td className="num muted">${cost.toFixed(4)}</td>
+                  <td className="num">${unit.toFixed(2)}</td>
+                  <td className="num">{i.total_price != null ? `$${Number(i.total_price).toFixed(2)}` : <span className="muted">—</span>}</td>
+                  <td className="num muted">${cost.toFixed(2)}</td>
                   <td className="num">
                     <span className={`badge ${marginClass}`}>{marginPct.toFixed(1)}%</span>
-                    <div className="muted small">${margin.toFixed(4)}</div>
+                    <div className="muted small">${margin.toFixed(2)}</div>
                   </td>
                   <td className="small">{i.notes || <span className="muted">—</span>}</td>
                   <td className="right">
@@ -447,22 +447,22 @@ function ItemForm({ mode, products = [], item, onSubmit, onCancel, busy, error }
             <select value={f.product_id} onChange={u('product_id')} required>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} {p.unit_of_measure ? `(${p.unit_of_measure})` : ''} — Labb cost ${Number(p.labb_cost).toFixed(4)}
+                  {p.name} {p.unit_of_measure ? `(${p.unit_of_measure})` : ''} — Labb cost ${Number(p.labb_cost).toFixed(2)}
                 </option>
               ))}
             </select>
           </label>
         ) : (
-          <p className="muted">Labb cost: ${Number(item.labb_cost).toFixed(4)}</p>
+          <p className="muted">Labb cost: ${Number(item.labb_cost).toFixed(2)}</p>
         )}
         <div className="row gap">
           <label className="field grow">
             <span>Unit price *</span>
-            <input type="number" step="0.0001" min="0" value={f.unit_price} onChange={u('unit_price')} required />
+            <input type="number" step="0.01" min="0" value={f.unit_price} onChange={u('unit_price')} required />
           </label>
           <label className="field grow">
             <span>Total price (optional)</span>
-            <input type="number" step="0.0001" min="0" value={f.total_price} onChange={u('total_price')} />
+            <input type="number" step="0.01" min="0" value={f.total_price} onChange={u('total_price')} />
           </label>
         </div>
         <label className="field"><span>Notes</span>

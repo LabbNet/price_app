@@ -176,7 +176,7 @@ export default function ClientDetail() {
                 <tr key={sp.id} className={sp.is_active ? '' : 'dim'}>
                   <td>{sp.product_name}{sp.unit_of_measure && <div className="muted small">{sp.unit_of_measure}</div>}</td>
                   <td><span className="badge">{CONDITION_LABEL[sp.condition_type]}</span></td>
-                  <td className="num">${unit.toFixed(4)}</td>
+                  <td className="num">${unit.toFixed(2)}</td>
                   <td className="num"><span className={`badge ${marginPct < 0 ? 'err' : 'ok'}`}>{marginPct.toFixed(1)}%</span></td>
                   <td className="small">
                     {sp.condition_type === 'time_limited' && (
@@ -233,11 +233,11 @@ export default function ClientDetail() {
                       {r.source === 'special' ? `Special (${CONDITION_LABEL[r.condition_type]})` : 'Bucket'}
                     </span>
                   </td>
-                  <td className="num">${Number(r.unit_price).toFixed(4)}</td>
-                  <td className="num muted">${Number(r.labb_cost).toFixed(4)}</td>
+                  <td className="num">${Number(r.unit_price).toFixed(2)}</td>
+                  <td className="num muted">${Number(r.labb_cost).toFixed(2)}</td>
                   <td className="num">
                     <span className={`badge ${margin < 0 ? 'err' : 'ok'}`}>{marginPct.toFixed(1)}%</span>
-                    <div className="muted small">${margin.toFixed(4)}</div>
+                    <div className="muted small">${margin.toFixed(2)}</div>
                   </td>
                   <td className="small">{r.source === 'special' ? r.reason : (r.notes || <span className="muted">—</span>)}</td>
                 </tr>

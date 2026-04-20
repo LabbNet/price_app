@@ -75,8 +75,8 @@ export default function PriceRequests() {
                     <div className="muted"><Link to={`/clients/${r.client_id}`}>{r.client_name}</Link></div>
                   </td>
                   <td><strong>{r.product_name}</strong>{r.product_sku && <div className="muted small"><code>{r.product_sku}</code></div>}</td>
-                  <td className="num muted">{r.product_msrp != null ? `$${Number(r.product_msrp).toFixed(4)}` : '—'}</td>
-                  <td className="num muted">${Number(r.product_labb_cost).toFixed(4)}</td>
+                  <td className="num muted">{r.product_msrp != null ? `$${Number(r.product_msrp).toFixed(2)}` : '—'}</td>
+                  <td className="num muted">${Number(r.product_labb_cost).toFixed(2)}</td>
                   <td className="small">{r.message || <span className="muted">—</span>}</td>
                   <td>
                     <span className={`badge ${r.status === 'responded' ? 'ok' : r.status === 'dismissed' ? 'err' : ''}`}>
@@ -115,7 +115,7 @@ export default function PriceRequests() {
 function RespondForm({ request, onSubmit, onCancel, busy, error }) {
   const [enableInBucket, setEnableInBucket] = useState(true);
   const [unitPrice, setUnitPrice] = useState(
-    request.product_msrp != null ? String(Number(request.product_msrp).toFixed(4)) : '',
+    request.product_msrp != null ? String(Number(request.product_msrp).toFixed(2)) : '',
   );
   const [note, setNote] = useState('');
 
@@ -139,7 +139,7 @@ function RespondForm({ request, onSubmit, onCancel, busy, error }) {
         </label>
         {enableInBucket && (
           <label className="field"><span>Unit price for this client</span>
-            <input type="number" step="0.0001" min="0" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="Leave blank to keep existing bucket price" />
+            <input type="number" step="0.01" min="0" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="Leave blank to keep existing bucket price" />
           </label>
         )}
         <label className="field"><span>Response note (optional)</span>

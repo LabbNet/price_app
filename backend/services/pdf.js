@@ -134,8 +134,8 @@ function renderPriceTable(doc, rows) {
     let cx = startX;
     for (const c of cols) {
       let v;
-      if (c.key === 'unit_price') v = `$${Number(r.unit_price).toFixed(4)}`;
-      else if (c.key === 'total_price') v = r.total_price != null ? `$${Number(r.total_price).toFixed(4)}` : '—';
+      if (c.key === 'unit_price') v = `$${Number(r.unit_price).toFixed(2)}`;
+      else if (c.key === 'total_price') v = r.total_price != null ? `$${Number(r.total_price).toFixed(2)}` : '—';
       else v = String(r[c.key] ?? '');
       doc.text(v, cx, y, { width: c.width });
       cx += c.width;

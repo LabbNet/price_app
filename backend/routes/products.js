@@ -135,14 +135,18 @@ router.post('/import', requireStaff, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
 
   const normalize = (v) => (v === '' || v == null ? null : v);
+  // Strip currency formatting (`$1,234.50`, whitespace, stray quotes) before parsing.
+  const cleanNumber = (v) => {
+    if (v == null) return null;
+    const s = String(v).trim().replace(/^["']|["']$/g, '').replace(/[$,\s]/g, '');
+    return s === '' ? null : Number(s);
+  };
   const toCost = (v) => {
-    if (v == null || v === '') return 0;
-    const n = Number(v);
+    const n = cleanNumber(v);
     return Number.isFinite(n) && n >= 0 ? n : 0;
   };
   const toDecimal = (v) => {
-    if (v == null || v === '') return null;
-    const n = Number(v);
+    const n = cleanNumber(v);
     return Number.isFinite(n) && n >= 0 ? n : null;
   };
   const products = parsed.data.products.map((r) => ({

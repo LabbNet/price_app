@@ -63,7 +63,7 @@ export default function SpecialPricingForm({ mode, initial, client, onSubmit, on
               <option value="">Select a product…</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} {p.unit_of_measure ? `(${p.unit_of_measure})` : ''} — Labb cost ${Number(p.labb_cost).toFixed(4)}
+                  {p.name} {p.unit_of_measure ? `(${p.unit_of_measure})` : ''} — Labb cost ${Number(p.labb_cost).toFixed(2)}
                 </option>
               ))}
             </select>
@@ -99,10 +99,10 @@ export default function SpecialPricingForm({ mode, initial, client, onSubmit, on
 
         <div className="row gap">
           <label className="field grow"><span>Unit price *</span>
-            <input type="number" step="0.0001" min="0" value={f.unit_price} onChange={u('unit_price')} required />
+            <input type="number" step="0.01" min="0" value={f.unit_price} onChange={u('unit_price')} required />
           </label>
           <label className="field grow"><span>Total price (optional)</span>
-            <input type="number" step="0.0001" min="0" value={f.total_price} onChange={u('total_price')} />
+            <input type="number" step="0.01" min="0" value={f.total_price} onChange={u('total_price')} />
           </label>
         </div>
 

@@ -106,8 +106,8 @@ export default function SignContract() {
                   <tr key={r.product_id}>
                     <td>{r.product_name}</td>
                     <td>{r.unit_of_measure || <span className="muted">—</span>}</td>
-                    <td className="num">${Number(r.unit_price).toFixed(4)}</td>
-                    <td className="num">{r.total_price != null ? `$${Number(r.total_price).toFixed(4)}` : <span className="muted">—</span>}</td>
+                    <td className="num">${Number(r.unit_price).toFixed(2)}</td>
+                    <td className="num">{r.total_price != null ? `$${Number(r.total_price).toFixed(2)}` : <span className="muted">—</span>}</td>
                   </tr>
                 ))}
               </tbody>

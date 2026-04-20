@@ -306,9 +306,12 @@ router.post('/:id/items/import', requireStaff, async (req, res) => {
   const bucket = await db('pricing_buckets').where({ id: req.params.id }).first();
   if (!bucket) return res.status(404).json({ error: 'bucket_not_found' });
 
+  // Strip currency formatting (`$1,234.50`, whitespace, stray quotes) before parsing.
   const toNum = (v) => {
-    if (v == null || v === '') return null;
-    const n = Number(v);
+    if (v == null) return null;
+    const s = String(v).trim().replace(/^["']|["']$/g, '').replace(/[$,\s]/g, '');
+    if (s === '') return null;
+    const n = Number(s);
     return Number.isFinite(n) && n >= 0 ? n : null;
   };
 

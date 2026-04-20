@@ -101,7 +101,7 @@ export default function SpecialPricing() {
                     </td>
                     <td>{sp.product_name}{sp.unit_of_measure && <div className="muted small">{sp.unit_of_measure}</div>}</td>
                     <td><span className="badge">{CONDITION_LABEL[sp.condition_type]}</span></td>
-                    <td className="num">${unit.toFixed(4)}</td>
+                    <td className="num">${unit.toFixed(2)}</td>
                     <td className="num"><span className={`badge ${marginPct < 0 ? 'err' : 'ok'}`}>{marginPct.toFixed(1)}%</span></td>
                     <td className="small">
                       {sp.condition_type === 'time_limited' && (
