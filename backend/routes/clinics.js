@@ -3,6 +3,7 @@ const { z } = require('zod');
 const db = require('../db/knex');
 const { requireAuth, requireStaff } = require('../middleware/auth');
 const { audit } = require('../services/audit');
+const { findDuplicates, processNewOrUpdated } = require('../services/dedup');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -12,6 +13,8 @@ const clinicSchema = z.object({
   legal_name: z.string().nullable().optional(),
   ein: z.string().nullable().optional(),
   account_type: z.enum(['pro', 'standard']).optional(),
+  category: z.string().nullable().optional(),
+  subcategory: z.string().nullable().optional(),
   sales_rep_id: z.string().uuid({ message: 'sales rep is required' }),
   primary_contact_name: z.string().nullable().optional(),
   primary_contact_email: z.string().email().nullable().optional().or(z.literal('').transform(() => null)),
@@ -43,6 +46,8 @@ router.get('/', async (req, res) => {
       'c.name',
       'c.legal_name',
       'c.account_type',
+      'c.category',
+      'c.subcategory',
       'c.primary_contact_name',
       'c.primary_contact_email',
       'c.is_active',
@@ -76,12 +81,56 @@ router.get('/:id', async (req, res) => {
   res.json({ clinic });
 });
 
+// Pre-submit duplicate check — the UI calls this before showing the warning
+// modal so staff can decide whether to proceed. Not persisted.
+router.get('/check-duplicate', requireStaff, async (req, res) => {
+  const matches = await findDuplicates({
+    address_line1: req.query.address_line1,
+    city: req.query.city,
+    state: req.query.state,
+    postal_code: req.query.postal_code,
+    excludeId: req.query.exclude_id || null,
+  });
+  res.json({
+    matches: matches.map((m) => ({
+      id: m.clinic.id,
+      name: m.clinic.name,
+      address_line1: m.clinic.address_line1,
+      city: m.clinic.city,
+      state: m.clinic.state,
+      postal_code: m.clinic.postal_code,
+      created_at: m.clinic.created_at,
+      match_score: m.score,
+    })),
+  });
+});
+
 router.post('/', requireStaff, async (req, res) => {
   const parsed = clinicSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
-  const [row] = await db('clinics').insert(parsed.data).returning('*');
-  await audit({ req, action: 'clinic.create', entityType: 'clinic', entityId: row.id, after: row });
-  res.status(201).json({ clinic: row });
+
+  const result = await db.transaction(async (trx) => {
+    const [row] = await trx('clinics').insert(parsed.data).returning('*');
+    const dedup = await processNewOrUpdated(row.id, { trx, actorId: req.user.id });
+    return { row, dedup };
+  });
+
+  // If the dedup auto-delete removed the just-inserted row, surface that.
+  const wasDeleted = result.dedup.deleted.includes(result.row.id);
+  await audit({
+    req,
+    action: wasDeleted ? 'clinic.create_duplicate_auto_deleted' : 'clinic.create',
+    entityType: 'clinic',
+    entityId: result.row.id,
+    after: result.row,
+    notes: wasDeleted ? 'Exact duplicate — auto-deleted' : null,
+  });
+
+  res.status(201).json({
+    clinic: result.row,
+    auto_deleted: wasDeleted,
+    queued_for_review: result.dedup.queued,
+  });
 });
 
 router.patch('/:id', requireStaff, async (req, res) => {
@@ -89,9 +138,23 @@ router.patch('/:id', requireStaff, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
   const before = await db('clinics').where({ id: req.params.id }).first();
   if (!before) return res.status(404).json({ error: 'not_found' });
-  const [row] = await db('clinics').where({ id: req.params.id }).update({ ...parsed.data, updated_at: db.fn.now() }).returning('*');
-  await audit({ req, action: 'clinic.update', entityType: 'clinic', entityId: row.id, before, after: row });
-  res.json({ clinic: row });
+
+  const result = await db.transaction(async (trx) => {
+    const [row] = await trx('clinics').where({ id: req.params.id }).update({ ...parsed.data, updated_at: trx.fn.now() }).returning('*');
+    const addressChanged = ['address_line1', 'city', 'state', 'postal_code']
+      .some((f) => parsed.data[f] !== undefined && parsed.data[f] !== before[f]);
+    const dedup = addressChanged
+      ? await processNewOrUpdated(row.id, { trx, actorId: req.user.id })
+      : { deleted: [], queued: [] };
+    return { row, dedup };
+  });
+
+  await audit({ req, action: 'clinic.update', entityType: 'clinic', entityId: result.row.id, before, after: result.row });
+  res.json({
+    clinic: result.row,
+    auto_deleted: result.dedup.deleted.includes(result.row.id),
+    queued_for_review: result.dedup.queued,
+  });
 });
 
 router.post('/:id/deactivate', requireStaff, async (req, res) => {
@@ -201,18 +264,31 @@ router.post('/import', requireStaff, async (req, res) => {
     notes: normalize(r.notes),
   }));
 
-  const inserted = await db.transaction(async (trx) => {
-    return trx('clinics').insert(rows).returning(['id', 'name']);
+  const { inserted, deleted, queued } = await db.transaction(async (trx) => {
+    const ins = await trx('clinics').insert(rows).returning(['id', 'name']);
+    const del = [];
+    const que = [];
+    for (const r of ins) {
+      const result = await processNewOrUpdated(r.id, { trx, actorId: req.user.id });
+      if (result.deleted.length) del.push(...result.deleted);
+      if (result.queued.length) que.push(...result.queued);
+    }
+    return { inserted: ins, deleted: del, queued: que };
   });
 
   await audit({
     req,
     action: 'clinic.bulk_import',
     entityType: 'clinic',
-    notes: `imported ${inserted.length} clinics`,
-    after: { count: inserted.length },
+    notes: `imported ${inserted.length - deleted.length} (auto-deleted ${deleted.length} duplicates; ${queued.length} queued for review)`,
+    after: { count: inserted.length, auto_deleted: deleted.length, queued: queued.length },
   });
-  res.status(201).json({ imported: inserted.length, clinics: inserted });
+  res.status(201).json({
+    imported: inserted.length - deleted.length,
+    auto_deleted: deleted.length,
+    queued_for_review: queued.length,
+    clinics: inserted.filter((c) => !deleted.includes(c.id)),
+  });
 });
 
 module.exports = router;

@@ -20,6 +20,7 @@ import ContractDetail from './pages/ContractDetail';
 import SignContract from './pages/SignContract';
 import Users from './pages/Users';
 import PriceRequests from './pages/PriceRequests';
+import Duplicates from './pages/Duplicates';
 import PortalHome from './pages/PortalHome';
 import PortalPricing from './pages/PortalPricing';
 import PortalContracts from './pages/PortalContracts';
@@ -60,6 +61,7 @@ export default function App() {
           <Route path="/contracts/:id" element={<ProtectedRoute allow={STAFF}><ContractDetail /></ProtectedRoute>} />
           <Route path="/users" element={<ProtectedRoute allow={STAFF}><Users /></ProtectedRoute>} />
           <Route path="/price-requests" element={<ProtectedRoute allow={STAFF}><PriceRequests /></ProtectedRoute>} />
+          <Route path="/duplicates" element={<ProtectedRoute allow={STAFF}><Duplicates /></ProtectedRoute>} />
 
           {/* Portal (clinic / client users) */}
           <Route path="/portal" element={<ProtectedRoute allow={PORTAL}><PortalHome /></ProtectedRoute>} />

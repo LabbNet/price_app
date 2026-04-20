@@ -4,6 +4,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '../api';
 import CsvImportModal from '../components/CsvImportModal';
 
+export const ACCOUNT_CATEGORIES = ['Employment', 'Corrections', 'Treatment', 'Education'];
+export const EMPLOYMENT_SUBCATEGORIES = [
+  'Construction',
+  'Manufacturing',
+  'Staffing agencies',
+  'Nursing homes & Home Health',
+  'Hospitals',
+  'Oil & Gas',
+  'Mining',
+  'Delivery & Transportation',
+  'Food Processing',
+  'Warehousing',
+  'Other',
+];
+
 // Dropdown source for sales rep — admin users only.
 function useAdminUsers() {
   return useQuery({
@@ -223,6 +238,8 @@ export function ClinicForm({ initial = {}, onSubmit, onCancel, busy, error, titl
     legal_name: initial.legal_name || '',
     ein: initial.ein || '',
     account_type: initial.account_type || 'pro',
+    category: initial.category || '',
+    subcategory: initial.subcategory || '',
     sales_rep_id: initial.sales_rep_id || '',
     primary_contact_name: initial.primary_contact_name || '',
     primary_contact_email: initial.primary_contact_email || '',
@@ -233,24 +250,65 @@ export function ClinicForm({ initial = {}, onSubmit, onCancel, busy, error, titl
     postal_code: initial.postal_code || '',
     notes: initial.notes || '',
   });
-  const u = (k) => (e) => setF({ ...f, [k]: e.target.value });
-  const submit = (e) => {
+  const u = (k) => (e) => setF((prev) => {
+    const next = { ...prev, [k]: e.target.value };
+    // Clear subcategory when category moves off Employment
+    if (k === 'category' && next.category !== 'Employment') next.subcategory = '';
+    // Clear category/subcategory when toggling back to PRO
+    if (k === 'account_type' && next.account_type === 'pro') { next.category = ''; next.subcategory = ''; }
+    return next;
+  });
+
+  const [duplicateMatches, setDuplicateMatches] = useState(null);
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+
+  const buildPayload = () => ({
+    name: f.name,
+    legal_name: f.legal_name || null,
+    ein: f.ein || null,
+    account_type: f.account_type,
+    category: f.account_type === 'standard' ? (f.category || null) : null,
+    subcategory: f.account_type === 'standard' && f.category === 'Employment' ? (f.subcategory || null) : null,
+    sales_rep_id: f.sales_rep_id || null,
+    primary_contact_name: f.primary_contact_name || null,
+    primary_contact_email: f.primary_contact_email || null,
+    primary_contact_phone: f.primary_contact_phone || null,
+    address_line1: f.address_line1 || null,
+    city: f.city || null,
+    state: f.state || null,
+    postal_code: f.postal_code || null,
+    notes: f.notes || null,
+  });
+
+  const submit = async (e) => {
     e.preventDefault();
-    onSubmit({
-      name: f.name,
-      legal_name: f.legal_name || null,
-      ein: f.ein || null,
-      account_type: f.account_type,
-      sales_rep_id: f.sales_rep_id || null,
-      primary_contact_name: f.primary_contact_name || null,
-      primary_contact_email: f.primary_contact_email || null,
-      primary_contact_phone: f.primary_contact_phone || null,
-      address_line1: f.address_line1 || null,
-      city: f.city || null,
-      state: f.state || null,
-      postal_code: f.postal_code || null,
-      notes: f.notes || null,
-    });
+    if (duplicateMatches) {
+      // User already saw the warning; treat submit as "proceed anyway".
+      onSubmit(buildPayload());
+      return;
+    }
+    // Preflight duplicate check (manual add / edit only — skip if no address)
+    if (f.address_line1 || f.postal_code) {
+      setCheckingDuplicates(true);
+      try {
+        const q = new URLSearchParams();
+        if (f.address_line1) q.set('address_line1', f.address_line1);
+        if (f.city) q.set('city', f.city);
+        if (f.state) q.set('state', f.state);
+        if (f.postal_code) q.set('postal_code', f.postal_code);
+        if (initial.id) q.set('exclude_id', initial.id);
+        const { matches } = await apiGet(`/api/clinics/check-duplicate?${q.toString()}`);
+        setCheckingDuplicates(false);
+        if (matches.length > 0) {
+          setDuplicateMatches(matches);
+          return;
+        }
+      } catch {
+        setCheckingDuplicates(false);
+        // On check failure, fall through and submit anyway.
+      }
+    }
+    onSubmit(buildPayload());
   };
   return (
     <div className="modal" role="dialog">
@@ -272,6 +330,24 @@ export function ClinicForm({ initial = {}, onSubmit, onCancel, busy, error, titl
             </label>
           </div>
         </label>
+        {f.account_type === 'standard' && (
+          <div className="row gap">
+            <label className="field grow"><span>Category *</span>
+              <select value={f.category} onChange={u('category')} required>
+                <option value="">Select category…</option>
+                {ACCOUNT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            {f.category === 'Employment' && (
+              <label className="field grow"><span>Sub-category *</span>
+                <select value={f.subcategory} onChange={u('subcategory')} required>
+                  <option value="">Select sub-category…</option>
+                  {EMPLOYMENT_SUBCATEGORIES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+            )}
+          </div>
+        )}
         <label className="field"><span>Sales rep *</span>
           <select value={f.sales_rep_id} onChange={u('sales_rep_id')} required>
             <option value="">Select an admin user…</option>
@@ -320,9 +396,35 @@ export function ClinicForm({ initial = {}, onSubmit, onCancel, busy, error, titl
           <textarea rows={3} value={f.notes} onChange={u('notes')} />
         </label>
         {error && <p className="error">{String(error.message || error)}</p>}
+
+        {duplicateMatches && duplicateMatches.length > 0 && (
+          <div className="card" style={{ background: 'rgba(230,62,87,0.08)', borderColor: 'var(--labb-red)' }}>
+            <h3 style={{ margin: 0, color: 'var(--labb-red)' }}>⚠ Possible duplicate</h3>
+            <p className="muted small">
+              {duplicateMatches.some((m) => m.match_score === 4)
+                ? 'This address exactly matches an existing account. Saving will auto-delete the new one.'
+                : `This address partially matches an existing account (${duplicateMatches[0].match_score}/4 fields). Save anyway to queue it for review.`}
+            </p>
+            <ul className="muted small">
+              {duplicateMatches.map((m) => (
+                <li key={m.id}>
+                  <strong>{m.name}</strong> — {[m.address_line1, m.city, m.state, m.postal_code].filter(Boolean).join(', ')}
+                  {' '}<span className="badge">{m.match_score}/4</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="row gap end">
           <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>
-          <button type="submit" className="btn primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+          <button
+            type="submit"
+            className="btn primary"
+            disabled={busy || checkingDuplicates}
+          >
+            {busy ? 'Saving…' : checkingDuplicates ? 'Checking…' : duplicateMatches ? 'Save anyway' : 'Save'}
+          </button>
         </div>
       </form>
     </div>
