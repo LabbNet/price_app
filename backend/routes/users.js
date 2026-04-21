@@ -98,50 +98,119 @@ router.post('/invite', requireStaff, async (req, res) => {
   const parsed = inviteSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'invalid_body', details: parsed.error.flatten() });
 
+  const email = parsed.data.email.toLowerCase();
   const token = crypto.randomBytes(32).toString('base64url');
   const ttlDays = Number(process.env.INVITE_TTL_DAYS || 14);
   const expires_at = new Date(Date.now() + ttlDays * 86400_000);
 
-  const [row] = await db('email_invites')
-    .insert({
-      email: parsed.data.email.toLowerCase(),
-      role: parsed.data.role,
-      clinic_id: parsed.data.clinic_id || null,
-      client_id: parsed.data.client_id || null,
-      token,
-      expires_at,
-      invited_by: req.user.id,
-    })
-    .returning('*');
+  // While email delivery is down, creating an invite also creates the user
+  // immediately with a shared default password so the invitee can log in
+  // right away. Tell them to change it on first sign-in.
+  const DEFAULT_PASSWORD = 'Smart1234!';
+
+  const result = await db.transaction(async (trx) => {
+    const [invite] = await trx('email_invites')
+      .insert({
+        email,
+        role: parsed.data.role,
+        clinic_id: parsed.data.clinic_id || null,
+        client_id: parsed.data.client_id || null,
+        token,
+        expires_at,
+        invited_by: req.user.id,
+      })
+      .returning('*');
+
+    // If a user already owns this email, just keep the old one (don't
+    // reset). Otherwise create with the shared default password.
+    const existing = await trx('users').whereRaw('LOWER(email) = ?', email).first();
+    let user;
+    let passwordSet = false;
+    if (existing) {
+      user = existing;
+    } else {
+      const password_hash = await bcrypt.hash(DEFAULT_PASSWORD, 12);
+      const [u] = await trx('users')
+        .insert({
+          email,
+          password_hash,
+          role: parsed.data.role,
+          clinic_id: parsed.data.clinic_id || null,
+          client_id: parsed.data.client_id || null,
+        })
+        .returning(['id', 'email', 'role', 'clinic_id', 'client_id']);
+      user = u;
+      passwordSet = true;
+      await trx('email_invites').where({ id: invite.id }).update({ accepted_at: trx.fn.now() });
+    }
+    return { invite, user, passwordSet };
+  });
 
   await audit({
     req,
-    action: 'user.invite',
+    action: result.passwordSet ? 'user.invite_autocreate' : 'user.invite',
     entityType: 'email_invite',
-    entityId: row.id,
-    after: row,
-    notes: `invited ${parsed.data.email} as ${parsed.data.role}`,
+    entityId: result.invite.id,
+    after: result.invite,
+    notes: result.passwordSet
+      ? `invited ${email} + auto-created with default password`
+      : `invited ${email} (user already exists)`,
   });
 
-  // Compose a friendly scope label from the targeted clinic/client.
-  let scopeLabel = '';
-  if (parsed.data.clinic_id) {
-    const cn = await db('clinics').where({ id: parsed.data.clinic_id }).first();
-    if (cn?.name) scopeLabel = cn.name;
-  }
-  if (parsed.data.client_id) {
-    const cl = await db('clients').where({ id: parsed.data.client_id }).first();
-    if (cl?.name) scopeLabel = scopeLabel ? `${scopeLabel} · ${cl.name}` : cl.name;
-  }
-
-  // Fire-and-forget: errors are logged by the mailer, invite record is
-  // authoritative and the token is returned so staff can copy the link.
-  const msg = inviteEmail({ invite: row, invitedByEmail: req.user.email, scopeLabel });
-  const emailResult = await sendEmail({ to: row.email, subject: msg.subject, text: msg.text, html: msg.html });
-
   res.status(201).json({
-    invite: { id: row.id, token, expires_at },
-    email: emailResult,
+    invite: { id: result.invite.id, token, expires_at },
+    user: result.user,
+    login: result.passwordSet ? { email, password: DEFAULT_PASSWORD } : null,
+    user_already_existed: !result.passwordSet,
+  });
+});
+
+// Bulk-convert every open invite into a ready-to-log-in user with the
+// shared default password. Safe to re-run — skips invites whose email
+// already has a user.
+router.post('/invites/convert-pending', requireStaff, async (req, res) => {
+  const DEFAULT_PASSWORD = 'Smart1234!';
+  const password_hash = await bcrypt.hash(DEFAULT_PASSWORD, 12);
+
+  const pending = await db('email_invites').whereNull('accepted_at');
+  const created = [];
+  const skipped = [];
+
+  for (const inv of pending) {
+    const email = inv.email.toLowerCase();
+    const existing = await db('users').whereRaw('LOWER(email) = ?', email).first();
+    if (existing) {
+      skipped.push({ email, reason: 'user_already_exists' });
+      await db('email_invites').where({ id: inv.id }).update({ accepted_at: db.fn.now() });
+      continue;
+    }
+    await db.transaction(async (trx) => {
+      const [u] = await trx('users')
+        .insert({
+          email,
+          password_hash,
+          role: inv.role,
+          clinic_id: inv.clinic_id || null,
+          client_id: inv.client_id || null,
+        })
+        .returning(['id', 'email', 'role']);
+      await trx('email_invites').where({ id: inv.id }).update({ accepted_at: trx.fn.now() });
+      created.push(u);
+    });
+  }
+
+  await audit({
+    req,
+    action: 'user.invite_bulk_convert',
+    entityType: 'email_invite',
+    notes: `created ${created.length}, skipped ${skipped.length}`,
+    after: { created: created.length, skipped: skipped.length },
+  });
+
+  res.json({
+    created,
+    skipped,
+    password: DEFAULT_PASSWORD,
   });
 });
 

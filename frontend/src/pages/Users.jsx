@@ -27,8 +27,18 @@ export default function Users() {
     mutationFn: (data) => apiPost('/api/users/invite', data),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ['invites'] });
-      setInviteResult({ ...r.invite, email: r.email });
+      qc.invalidateQueries({ queryKey: ['users'] });
+      setInviteResult(r);
       setInviting(false);
+    },
+  });
+
+  const convertPending = useMutation({
+    mutationFn: () => apiPost('/api/users/invites/convert-pending'),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['invites'] });
+      qc.invalidateQueries({ queryKey: ['users'] });
+      alert(`Created ${r.created.length} user(s) with password ${r.password}. Skipped ${r.skipped.length} (already existed).`);
     },
   });
 
@@ -46,25 +56,44 @@ export default function Users() {
     <div className="shell">
       <div className="row-between">
         <h1>Users &amp; invites</h1>
-        <button className="btn primary" onClick={() => { setInviteResult(null); setInviting(true); }}>+ Invite user</button>
+        <div className="row gap">
+          <button
+            className="btn ghost"
+            onClick={() => { if (confirm('Convert every open invite to a user with the default password Smart1234!?')) convertPending.mutate(); }}
+            disabled={convertPending.isPending}
+          >
+            {convertPending.isPending ? 'Converting…' : 'Convert pending invites'}
+          </button>
+          <button className="btn primary" onClick={() => { setInviteResult(null); setInviting(true); }}>+ Invite user</button>
+        </div>
       </div>
 
       <p className="muted">
         Labb staff (admin/sales/legal/finance) manage the platform. Portal users (clinic_admin,
         clinic_user, client_user) log in to see their own pricing and contracts.
+        While email delivery is offline, every new invite also creates a user with the shared
+        default password <code>Smart1234!</code> so the invitee can log in immediately.
       </p>
 
       {inviteResult && (
         <div className="card">
-          <h2>Invite created</h2>
-          {inviteResult.email?.sent ? (
-            <p>✉️ Email delivered to the invitee. Expires in 14 days.</p>
-          ) : inviteResult.email?.logged ? (
-            <p className="muted">Email service isn't configured — the link was logged to the API console. You can still copy it below.</p>
+          <h2>Account ready</h2>
+          {inviteResult.user_already_existed ? (
+            <p className="muted">A user already existed for <strong>{inviteResult.user?.email}</strong>. Invite logged but the existing password was left unchanged.</p>
           ) : (
-            <p className="muted">Email couldn't be sent ({inviteResult.email?.error || 'unknown reason'}). Copy the link and send it manually.</p>
+            <>
+              <p>Share these login details with the invitee:</p>
+              <div className="card" style={{ background: 'var(--surface-alt)', margin: '0.5rem 0' }}>
+                <div className="row gap" style={{ flexWrap: 'wrap' }}>
+                  <Field label="Email" value={inviteResult.login?.email} copy />
+                  <Field label="Password" value={inviteResult.login?.password} copy />
+                </div>
+                <p className="muted small" style={{ marginTop: '0.5rem' }}>
+                  They should change this on first sign-in.
+                </p>
+              </div>
+            </>
           )}
-          <InviteLinkCopy token={inviteResult.token} />
         </div>
       )}
 
@@ -164,6 +193,26 @@ export default function Users() {
           error={invite.error}
         />
       )}
+    </div>
+  );
+}
+
+function Field({ label, value, copy }) {
+  if (!value) return null;
+  return (
+    <div style={{ minWidth: 180 }}>
+      <div className="muted small" style={{ textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: '0.72rem' }}>{label}</div>
+      <div className="row gap">
+        <code style={{ fontSize: 14 }}>{value}</code>
+        {copy && (
+          <button
+            type="button"
+            className="btn ghost"
+            style={{ padding: '2px 8px', fontSize: 12 }}
+            onClick={() => { navigator.clipboard.writeText(value); }}
+          >Copy</button>
+        )}
+      </div>
     </div>
   );
 }
