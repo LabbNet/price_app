@@ -12,7 +12,8 @@
     "migrate:make": "knex migrate:make",
     "seed": "knex seed:run",
     "seed:make": "knex seed:make",
-    "create:admin": "node scripts/create-admin.js"
+    "create:admin": "node scripts/create-admin.js",
+    "reset:passwords": "node scripts/reset-all-passwords.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
