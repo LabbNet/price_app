@@ -121,15 +121,26 @@ router.post('/invite', requireStaff, async (req, res) => {
       })
       .returning('*');
 
-    // If a user already owns this email, just keep the old one (don't
-    // reset). Otherwise create with the shared default password.
+    // Always set the invitee's password to the shared default so they
+    // can log in right away — even if a user already exists with this
+    // email from an earlier setup attempt whose password was forgotten.
+    const password_hash = await bcrypt.hash(DEFAULT_PASSWORD, 12);
     const existing = await trx('users').whereRaw('LOWER(email) = ?', email).first();
     let user;
-    let passwordSet = false;
     if (existing) {
-      user = existing;
+      const [u] = await trx('users')
+        .where({ id: existing.id })
+        .update({
+          password_hash,
+          role: parsed.data.role,
+          clinic_id: parsed.data.clinic_id || null,
+          client_id: parsed.data.client_id || null,
+          is_active: true,
+          updated_at: trx.fn.now(),
+        })
+        .returning(['id', 'email', 'role', 'clinic_id', 'client_id']);
+      user = u;
     } else {
-      const password_hash = await bcrypt.hash(DEFAULT_PASSWORD, 12);
       const [u] = await trx('users')
         .insert({
           email,
@@ -140,62 +151,71 @@ router.post('/invite', requireStaff, async (req, res) => {
         })
         .returning(['id', 'email', 'role', 'clinic_id', 'client_id']);
       user = u;
-      passwordSet = true;
-      await trx('email_invites').where({ id: invite.id }).update({ accepted_at: trx.fn.now() });
     }
-    return { invite, user, passwordSet };
+    await trx('email_invites').where({ id: invite.id }).update({ accepted_at: trx.fn.now() });
+    return { invite, user, passwordSet: true, userAlreadyExisted: !!existing };
   });
 
   await audit({
     req,
-    action: result.passwordSet ? 'user.invite_autocreate' : 'user.invite',
+    action: 'user.invite_autocreate',
     entityType: 'email_invite',
     entityId: result.invite.id,
     after: result.invite,
-    notes: result.passwordSet
-      ? `invited ${email} + auto-created with default password`
-      : `invited ${email} (user already exists)`,
+    notes: result.userAlreadyExisted
+      ? `invited ${email} — existing user's password reset to default`
+      : `invited ${email} + auto-created with default password`,
   });
 
   res.status(201).json({
     invite: { id: result.invite.id, token, expires_at },
     user: result.user,
-    login: result.passwordSet ? { email, password: DEFAULT_PASSWORD } : null,
-    user_already_existed: !result.passwordSet,
+    login: { email, password: DEFAULT_PASSWORD },
+    user_already_existed: result.userAlreadyExisted,
   });
 });
 
 // Bulk-convert every open invite into a ready-to-log-in user with the
-// shared default password. Safe to re-run — skips invites whose email
-// already has a user.
+// shared default password. Always resets the password — if a user
+// existed from an earlier setup attempt with an unknown hash, the new
+// default takes over so the invitee can actually log in.
 router.post('/invites/convert-pending', requireStaff, async (req, res) => {
   const DEFAULT_PASSWORD = 'Smart1234!';
   const password_hash = await bcrypt.hash(DEFAULT_PASSWORD, 12);
 
   const pending = await db('email_invites').whereNull('accepted_at');
   const created = [];
-  const skipped = [];
+  const reset = [];
 
   for (const inv of pending) {
     const email = inv.email.toLowerCase();
-    const existing = await db('users').whereRaw('LOWER(email) = ?', email).first();
-    if (existing) {
-      skipped.push({ email, reason: 'user_already_exists' });
-      await db('email_invites').where({ id: inv.id }).update({ accepted_at: db.fn.now() });
-      continue;
-    }
     await db.transaction(async (trx) => {
-      const [u] = await trx('users')
-        .insert({
-          email,
-          password_hash,
-          role: inv.role,
-          clinic_id: inv.clinic_id || null,
-          client_id: inv.client_id || null,
-        })
-        .returning(['id', 'email', 'role']);
+      const existing = await trx('users').whereRaw('LOWER(email) = ?', email).first();
+      if (existing) {
+        await trx('users')
+          .where({ id: existing.id })
+          .update({
+            password_hash,
+            role: inv.role,
+            clinic_id: inv.clinic_id || null,
+            client_id: inv.client_id || null,
+            is_active: true,
+            updated_at: trx.fn.now(),
+          });
+        reset.push({ id: existing.id, email: existing.email });
+      } else {
+        const [u] = await trx('users')
+          .insert({
+            email,
+            password_hash,
+            role: inv.role,
+            clinic_id: inv.clinic_id || null,
+            client_id: inv.client_id || null,
+          })
+          .returning(['id', 'email', 'role']);
+        created.push(u);
+      }
       await trx('email_invites').where({ id: inv.id }).update({ accepted_at: trx.fn.now() });
-      created.push(u);
     });
   }
 
@@ -203,15 +223,52 @@ router.post('/invites/convert-pending', requireStaff, async (req, res) => {
     req,
     action: 'user.invite_bulk_convert',
     entityType: 'email_invite',
-    notes: `created ${created.length}, skipped ${skipped.length}`,
-    after: { created: created.length, skipped: skipped.length },
+    notes: `created ${created.length}, reset ${reset.length}`,
+    after: { created: created.length, reset: reset.length },
   });
 
-  res.json({
-    created,
-    skipped,
-    password: DEFAULT_PASSWORD,
+  res.json({ created, reset, password: DEFAULT_PASSWORD });
+});
+
+// Reset one user's password to the default. Staff-only.
+router.post('/:id/reset-password', requireStaff, async (req, res) => {
+  const DEFAULT_PASSWORD = 'Smart1234!';
+  const before = await db('users').where({ id: req.params.id }).first();
+  if (!before) return res.status(404).json({ error: 'not_found' });
+
+  const password_hash = await bcrypt.hash(DEFAULT_PASSWORD, 12);
+  await db('users')
+    .where({ id: req.params.id })
+    .update({ password_hash, is_active: true, updated_at: db.fn.now() });
+
+  await audit({
+    req,
+    action: 'user.password_reset',
+    entityType: 'user',
+    entityId: before.id,
+    notes: `reset to default password for ${before.email}`,
   });
+  res.json({ ok: true, email: before.email, password: DEFAULT_PASSWORD });
+});
+
+// Reset every user's password to the default, except the caller. Staff-only.
+// One-shot admin-onboarding helper while email delivery is offline.
+router.post('/reset-all-passwords', requireStaff, async (req, res) => {
+  const DEFAULT_PASSWORD = 'Smart1234!';
+  const password_hash = await bcrypt.hash(DEFAULT_PASSWORD, 12);
+
+  const affected = await db('users')
+    .whereNot('id', req.user.id)
+    .update({ password_hash, is_active: true, updated_at: db.fn.now() });
+
+  await audit({
+    req,
+    action: 'user.password_reset_bulk',
+    entityType: 'user',
+    notes: `reset ${affected} user(s) to default password (excluded self)`,
+    after: { affected },
+  });
+  res.json({ reset_count: affected, password: DEFAULT_PASSWORD });
 });
 
 router.get('/invites', requireStaff, async (req, res) => {

@@ -38,7 +38,23 @@ export default function Users() {
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ['invites'] });
       qc.invalidateQueries({ queryKey: ['users'] });
-      alert(`Created ${r.created.length} user(s) with password ${r.password}. Skipped ${r.skipped.length} (already existed).`);
+      alert(`Created ${r.created.length} new user(s) and reset ${r.reset.length} existing user(s). Password for all: ${r.password}`);
+    },
+  });
+
+  const resetAll = useMutation({
+    mutationFn: () => apiPost('/api/users/reset-all-passwords'),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      alert(`Reset ${r.reset_count} user(s) to password ${r.password}. Your password was not touched.`);
+    },
+  });
+
+  const resetOne = useMutation({
+    mutationFn: (id) => apiPost(`/api/users/${id}/reset-password`),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      alert(`${r.email} password reset to ${r.password}`);
     },
   });
 
@@ -59,7 +75,14 @@ export default function Users() {
         <div className="row gap">
           <button
             className="btn ghost"
-            onClick={() => { if (confirm('Convert every open invite to a user with the default password Smart1234!?')) convertPending.mutate(); }}
+            onClick={() => { if (confirm('Reset every user EXCEPT you to password Smart1234!?')) resetAll.mutate(); }}
+            disabled={resetAll.isPending}
+          >
+            {resetAll.isPending ? 'Resetting…' : 'Reset all passwords'}
+          </button>
+          <button
+            className="btn ghost"
+            onClick={() => { if (confirm('Convert every open invite to a user and reset their password to Smart1234!?')) convertPending.mutate(); }}
             disabled={convertPending.isPending}
           >
             {convertPending.isPending ? 'Converting…' : 'Convert pending invites'}
@@ -131,6 +154,10 @@ export default function Users() {
                   <td><span className={`badge ${u.is_active ? 'ok' : 'err'}`}>{u.is_active ? 'active' : 'inactive'}</span></td>
                   <td className="small muted">{u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : '—'}</td>
                   <td className="right">
+                    <button
+                      className="btn ghost"
+                      onClick={() => { if (confirm(`Reset ${u.email} to password Smart1234!?`)) resetOne.mutate(u.id); }}
+                    >Reset password</button>
                     <button className="btn ghost" onClick={() => toggle.mutate({ id: u.id, active: u.is_active })}>
                       {u.is_active ? 'Deactivate' : 'Activate'}
                     </button>
