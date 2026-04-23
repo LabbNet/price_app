@@ -92,6 +92,18 @@ async function resolveEffectivePrice({ clientId, productId, trx = db }) {
     };
   }
 
+  // No bucket assignment (or no matching item in the assigned bucket) —
+  // fall back to the product's MSRP so the portal still shows pricing.
+  if (product.msrp != null) {
+    return {
+      source: 'msrp',
+      unit_price: Number(product.msrp),
+      total_price: null,
+      labb_cost: Number(product.labb_cost),
+      is_enabled: true,
+    };
+  }
+
   return { source: 'none', labb_cost: Number(product.labb_cost) };
 }
 

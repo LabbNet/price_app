@@ -156,7 +156,7 @@ export default function BucketDetail() {
         </div>
       </div>
       <p className="muted small">
-        All active products start in every bucket at MSRP and default to <strong>Off</strong>. Toggle a row on to let clients see that product and price in their portal; off means the client sees a Request Price button instead.
+        All active products start in every bucket at MSRP and are <strong>enabled by default</strong>, so clients see pricing right away. Toggle a row off to hide a specific product from the portal (the client will see a Request Price button instead). Clients without a bucket assignment still see every product at its MSRP.
       </p>
 
       <div className="card">

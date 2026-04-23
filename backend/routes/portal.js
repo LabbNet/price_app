@@ -92,7 +92,8 @@ router.get('/clients/:id/pricing', async (req, res) => {
     // Bucket-sourced items respect is_enabled — disabled means "show product
     // but withhold price; let the client request it". Special pricing is
     // always considered visible since it was created intentionally.
-    const visible = r.source === 'special' ? true : r.is_enabled === true;
+    // Bucket items honor is_enabled; special + msrp sources are always visible.
+    const visible = r.source === 'bucket' ? r.is_enabled === true : true;
 
     if (!visible) {
       effective.push({

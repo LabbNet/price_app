@@ -80,7 +80,9 @@ export default function PortalPricing() {
                   <td className="num">${Number(r.unit_price).toFixed(2)}</td>
                   <td className="num">{r.total_price != null ? `$${Number(r.total_price).toFixed(2)}` : <span className="muted">—</span>}</td>
                   <td>
-                    <span className="badge">{r.source === 'special' ? 'Special' : 'Standard'}</span>
+                    <span className="badge">
+                      {r.source === 'special' ? 'Special' : r.source === 'msrp' ? 'MSRP' : 'Standard'}
+                    </span>
                     {r.reason && <div className="muted small">{r.reason}</div>}
                   </td>
                 </tr>

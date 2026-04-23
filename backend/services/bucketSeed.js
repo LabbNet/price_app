@@ -6,8 +6,9 @@ const db = require('../db/knex');
  * use this both at bucket creation and later to top-up a bucket after
  * new products are added to the catalog.
  *
- * All items are inserted with is_enabled = false, per the rule that
- * products start off-visible until a staff user turns them on.
+ * All items are inserted with is_enabled = true so pricing is visible
+ * in the portal immediately — staff can flip individual items off if
+ * they need to hide a specific product from a bucket.
  *
  * Returns the number of items actually inserted.
  */
@@ -26,7 +27,7 @@ async function seedBucketWithAllProducts(bucketId, { trx = db } = {}) {
       unit_price: p.msrp != null ? Number(p.msrp) : 0,
       total_price: null,
       notes: null,
-      is_enabled: false,
+      is_enabled: true,
     }));
 
   if (toInsert.length === 0) return 0;
@@ -59,7 +60,7 @@ async function addProductToAllBuckets(productId, { trx = db } = {}) {
       unit_price: product.msrp != null ? Number(product.msrp) : 0,
       total_price: null,
       notes: null,
-      is_enabled: false,
+      is_enabled: true,
     }));
 
   if (toInsert.length === 0) return 0;
